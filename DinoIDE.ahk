@@ -1,10 +1,14 @@
 ﻿#NoEnv
+#SingleInstance, ignore
 SetBatchLines, -1
 SetWorkingDir, %A_ScriptDir%
 
+#include icon.ahk
 #include DinoCompiler.ahk
+#include DinoIDE_Class.ahk
 #include RichCode.ahk
 #include gui_resize.ahk
+#include obj_dump.ahk
 #include Highlighters\DinoCode.ahk
 #include bin\dinocode\Crypt.ahk
 
@@ -20,6 +24,7 @@ SetWorkingDir, %A_ScriptDir%
 ;@Ahk2Exe-AddResource icon.ico, 208
 
 ; Working
+ide_version=v1.1.0
 ini := current "\config.ini" 
 IniRead, icon, %ini%, COMPILER, icon, 0
 (!FileExist(icon)) ? icon:=current "\icon.ico"
@@ -28,44 +33,13 @@ IniRead, SetCopyright, %ini%, COMPILER, SetCopyright, Copyright (c) since 2023
 IniRead, SetCompanyName, %ini%, COMPILER, SetCompanyName, DinoCode
 IniRead, admin, %ini%, COMPILER, admin, 0
 
-; Functions
-Add_Recent(File:="") {
-	global ini, Open_File
-	Menu, Opened, DeleteAll
-	if File {
-		IniWrite, %File%, %ini%, GENERAL, last_opened
-		Menu, Opened, Add, %File%, Open_Recent
-		Gui, +LastFound
-		WinGetTitle, Title
-		StringSplit, Title, Title, -, %A_Space%
-		WinSetTitle, %Title1% - %File%
-		Open_File:=new_list:=File
-		Arg_in(Open_File)
-		Arg_OrigFilename(basename(Open_File))
-	}
-	IniRead, last_opened_list, %ini%, GENERAL, last_opened_list, 0
-	(last_opened_list=0) ? last_opened_list:=""
-	Loop, Parse, last_opened_list, `;
-	{
-		if (A_Index<=6) {
-			if (A_LoopField!=File&&FileExist(A_LoopField)) {
-				new_list.=";" . A_LoopField
-				Menu, Opened, Add, %A_LoopField%, Open_Recent
-			}
-		} else {
-			break
-		}
-	}
-	IniWrite, %new_list%, %ini%, GENERAL, last_opened_list
-}
-
 ; Table of supported languages and sample codes
 Codes :=
 ( LTrim Join Comments
 {
 	"DinoCode": {
 		"Highlighter": "HighlightDino",
-		"Code": FileOpen("Examples\__SIMPLE_EXAMPLE.config", "r").Read()
+		"FileDefault": "Examples\ADVANCED\__SIMPLE_EXAMPLE.config"
 	}
 }
 )
@@ -84,6 +58,14 @@ Settings :=
 	
 	"UseHighlighter": True,
 	"HighlightDelay": 400,
+	"Gutter": {
+		; Width in pixels. Make this larger when using
+		; larger fonts. Set to 0 to disable the gutter.
+		"Width": 25,
+
+		"FGColor": 0x9FAFAF,
+		"BGColor": 0x262626
+	},
 	"Colors": {
 		"Comments":     0x7F9F7F,
 		"Functions":    0x7CC8CF,
@@ -100,14 +82,16 @@ Settings :=
 		"Flow":         0x52E0E4,
 		"TAGs":         0xF79B57,
 		"TAGMAIN":      0xF2300A
-	}
+	},
+	; AutoComplete
+	"UseAutoComplete": True,
+	"ACListRebuildDelay": 500 ; Delay until the user is finished typing
 }
 )
 
 ; Menus
 Zoom := "100 %"
 Menu, Opened, Add
-Add_Recent()
 Menu, Zoom, Add, 200 `%, Zoom
 Menu, Zoom, Add, 150 `%, Zoom
 Menu, Zoom, Add, 125 `%, Zoom
@@ -115,28 +99,41 @@ Menu, Zoom, Add, 100 `%, Zoom100
 Menu, Zoom, Check, 100 `%
 Menu, Zoom, Add, 75 `%, Zoom
 Menu, Zoom, Add, 50 `%, Zoom
+Menu, File, Add, &New, FileNew
 Menu, File, Add, &Open, FileOpen
 Menu, File, Add, &Open Recent, :Opened
+Menu, File, Add, &Open Script Dir, FileOpenDir
 Menu, File, Add, &Append, FileAppend
 Menu, File, Add, &Insert, FileInsert
 Menu, File, Add, &Close, FileClose
 Menu, File, Add, &Save, FileSave
 Menu, File, Add, Save &as, FileSaveAs
-Menu, File, Add, &Exit, GuiClose
-Menu, Search, Add, &Find, Find
-Menu, Search, Add, &Replace, Replace
+Menu, File, Add, Version, Version 
+Menu, File, Add, &Exit, Close
+Menu, Search, Add, &Find-Replace, Find
 Menu, Build, Add, Just RUN, RUN
+Menu, Build, Add, Just RUN (Step by Step), RUN
 Menu, Build, Add, Convert to .EXE, Compile
 Menu, Build, Add, Convert to .EXE and RUN, Compile
 Menu, Build, Add, Change properties, with_gui
 Menu, Examples, Add
-Loop, Examples/*.config
-{
-	Menu, Examples, Add, %A_LoopFileName%, Examples
+try {
+	Loop, Files, Examples\*, D
+	{
+		item:=A_LoopFileName
+		Loop, % A_LoopFileFullPath . "\*.config"
+			Menu, % item, Add, %A_LoopFileName%, Examples
+		Menu, Examples, Add, %A_LoopFileName%, % ":" item
+	}
 }
 Menu, Comments, Add, Block Comment, Comments
 Menu, Comments, Add, Block Uncomment, Comments
+Menu, View, Add, Prediction, AutoComplete
+Menu, View, Add, Highlighter, Highlighter
+Menu, View, Add, Always On Top, ToggleOnTop
 Menu, View, Add, &Zoom, :Zoom
+Menu, View, Check, Prediction
+Menu, View, Check, Highlighter
 Menu, GuiMenu, Add, &File, :File
 
 ; Extras
@@ -144,33 +141,85 @@ GuiFont := GuiDefaultFont()
 textz := GuiFont.Size
 style := GuiFont.Name
 
-; Add some controls
-Gui, +Resize +LastFound
+; Main GUI
+Gui, +Resize +LastFound -AlwaysOnTop
 Gui, Menu, GuiMenu
-
-; Add the RichCode
-RC := new RichCode(Settings, "xm w640 h470")
+IDE:=new DinoIDE(Settings), RC:=IDE.RichCode
 
 ; Add extra Menus
+IDE.Add_Recent()
 Menu, GuiMenu, Add, &Edit, % ":" RC.MenuName
 Menu, GuiMenu, Add, &Build, :Build
 Menu, GuiMenu, Add, &Search, :Search
 Menu, GuiMenu, Add, &View, :View
 Menu, GuiMenu, Add, &Comments, :Comments
 Menu, GuiMenu, Add, &Examples, :Examples
+Menu, GuiMenu, Add, &Libraries, Libraries
 GuiControl, Focus, % RC.hWnd
 GoSub, ChangeLang
-Gui, Show
 WinMaximize, A
+return
+
+Close:
+	IDE.GuiClose()
+return
+
+Version:
+	Gui info: New 
+	Gui info: Default 
+	Gui info: +AlwaysOnTop -MinimizeBox
+	Gui info: Color, 2A2C2A
+	Gui info: Font, s11, %style%
+	Gui info: Add, Picture, w100 h100, % "HBITMAP:*" Create_icon_ico()
+	Gui info: Add, Edit, w100 ReadOnly Center 0x200 cwhite -HScroll -VScroll NoTab, DinoIDE
+	Gui info: Add, Edit, w100 ReadOnly Center 0x200 cwhite -HScroll -VScroll NoTab, %ide_version%
+	Gui info: Add, Button, w100 Center gDeveloper, @BlassGO
+	Gui info: show, AutoSize Center, INFO
+	Gui info: +LastFound
+	WinWaitClose
+	Gui info: Destroy
+return
+
+Developer:
+	Run, https://github.com/BlassGO
+	Gui info: Destroy
+return
+
+ToggleOnTop:
+	if (IDE.AlwaysOnTop := !IDE.AlwaysOnTop)
+	{
+		Menu, View, Check, Always On Top
+		Gui, +AlwaysOnTop
+	}
+	else
+	{
+		Menu, View, UnCheck, Always On Top
+		Gui, -AlwaysOnTop
+	}
+return
+
+Highlighter:
+	if (IDE.Settings.UseHighlighter := !IDE.Settings.UseHighlighter)
+		Menu, View, Check, Highlighter
+	else
+		Menu, View, Uncheck, Highlighter
+	; Force refresh the code, adding/removing any highlighting
+	IDE.RichCode.Value := IDE.RichCode.Value
+return
+
+AutoComplete:
+	if (IDE.Settings.UseAutoComplete := !IDE.Settings.UseAutoComplete)
+		Menu, View, Check, Prediction
+	else
+		Menu, View, Uncheck, Prediction
+	IDE.AC.Enabled := IDE.Settings.UseAutoComplete
 return
 
 Open_Recent:
 	If FileExist(A_ThismenuItem) {
-		GoSub FileClose
-		IfMsgBox, Cancel
+		if !RC.FileClose()
 			return
 		RC.LoadFile(A_ThismenuItem)
-		Add_Recent(A_ThismenuItem)
 	}
 Return
 
@@ -188,31 +237,28 @@ Zoom100:
 Return
 
 Examples:
-	If FileExist(File:="Examples\" . A_ThismenuItem) {
-		GoSub FileClose
-		IfMsgBox, Cancel
+	If FileExist(File:="Examples\" . A_ThisMenu . "\" . A_ThismenuItem) {
+		if !RC.FileClose()
 			return
 		RC.LoadFile(File)
-		Add_Recent(File)
 	}
 return
 
 RUN:
 	to_exe:=false
-	RC.SaveFile(configtmp:=(Open_File) ? Open_File : current "\tmp\on_load.config")
-	Arg_in(configtmp)
+	if !RC.FileClose(true)
+		return
+	if (InStr(A_ThisMenuItem, "Step")) {
+		config_tracking:=true
+	}
 	build()
+	config_tracking:=false
 return
 
 Compile:
 	to_exe:=true
-	If !(Open_File) {
-		GoSub, FileSaveAs
-		if !(Open_File)
-		   return
-	} else {
-		RC.SaveFile(Open_File)
-	}
+	if !RC.FileClose(true)
+		return
 	build()
 	if !error {
 		if InStr(A_ThismenuItem, "RUN") {
@@ -232,26 +278,11 @@ Comments:
 return
 
 Find:
-	RC.FindText()
-return
-
-Replace:
-	RC.ReplaceText()
-return
-
-GuiClose:
-    GoSub FileClose
-	IfMsgBox, Cancel
-		return
-	RC := ""
-	Gui, Destroy
-	ExitApp
-return
-
-GuiSize:
-	if (A_EventInfo = 1)
-		return
-	AutoXYWH("wh", RC.hWnd)
+	;RC.FindText()
+	if WinExist("ahk_id" IDE.FindInstance.hWnd)
+		WinActivate, % "ahk_id" IDE.FindInstance.hWnd
+	else
+		IDE.FindInstance := new IDE.Find(IDE)
 return
 
 ChangeLang:
@@ -260,9 +291,8 @@ ChangeLang:
 	RC.Settings.Highlighter := Codes[Language].Highlighter
 	if FileExist(last_opened) {
 		RC.LoadFile(last_opened)
-		Add_Recent(last_opened)
 	} else {
-		RC.Value := Codes[Language].Code
+		RC.LoadFile(Codes[Language].FileDefault)
 	}
 return
 
@@ -273,56 +303,29 @@ return
 FileAppend:
 FileOpen:
 FileInsert:
-	If (File := RC.FileDlg("O")) {
-		GoSub FileClose
-		IfMsgBox, Cancel
-			return
-		RC.LoadFile(File, SubStr(A_ThisLabel, 5))
-		If (A_ThisLabel = "FileOpen") {
-			Add_Recent(File)
-		}
-	}
-	GuiControl, Focus, % RC.HWND
+	RC.FileOpen(SubStr(A_ThisLabel, 5))
 Return
 ; ----------------------------------------------------------------------------------------------------------------------
-FileClose:
-	If (Open_File) {
-		If RC.Modified {
-			Gui, +OwnDialogs
-			MsgBox, 35, Close File, Content has been modified!`nDo you want to save changes?
-			IfMsgBox, Cancel
-			{
-				GuiControl, Focus, % RC.HWND
-				Return
-			}
-			IfMsgBox, Yes
-				GoSub, FileSave
-		}
-		Gui, +LastFound
-		WinGetTitle, Title
-		StringSplit, Title, Title, -, %A_Space%
-		WinSetTitle, %Title1%
-		Open_File := ""
+FileOpenDir:
+	if RC.Open_File
+	{
+		SplitPath, % RC.Open_File,, Open_Dir
+		Run, explorer.exe "%Open_Dir%"
 	}
-	RC.Modified:=false
-	GuiControl, Focus, % RC.HWND
+return
+; ----------------------------------------------------------------------------------------------------------------------
+FileClose:
+	RC.FileClose()
 Return
 ; ----------------------------------------------------------------------------------------------------------------------
 FileSave:
-	If !(Open_File) {
-		GoSub, FileSaveAs
-		Return
-	}
-	RC.SaveFile(Open_File)
-	RC.Modified:=false
-	GuiControl, Focus, % RC.HWND
+	RC.FileSave()
 Return
 ; ----------------------------------------------------------------------------------------------------------------------
+FileNew:
+	RC.FileSaveAs(true)
+return
 FileSaveAs:
-	If (File := RC.FileDlg("S")) {
-		RC.SaveFile(File)
-		Add_Recent(File)
-	}
-	GuiControl, Focus, % RC.HWND
+	RC.FileSaveAs()
 Return
 

@@ -160,7 +160,8 @@ class NeutronWindow
 	LISTENERS := [this.WM_DESTROY, this.WM_SIZE, this.WM_NCCALCSIZE
 	, this.WM_KEYDOWN, this.WM_KEYUP, this.WM_SYSKEYDOWN, this.WM_SYSKEYUP
 	, this.WM_LBUTTONDOWN]
-	, signals:={} ; Provisional for DinoCode
+	
+	signals:={} ; Provisional for DinoCode
 	
 	; Maximum pixel inset for sizing handles to appear
 	border_size := 6

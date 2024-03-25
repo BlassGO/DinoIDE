@@ -31,13 +31,12 @@
 			, 0xRRGGBB,
 			, 0xRRGGBB]})
 */
-
 class RichCode
 {
 	static Msftedit := DllCall("LoadLibrary", "Str", "Msftedit.dll")
 	static IID_ITextDocument := "{8CC497C0-A1DF-11CE-8098-00AA0047BE5D}"
 	static MenuItems := ["Cut", "Copy", "Paste", "Delete", "", "Select All", ""
-		, "UPPERCASE", "lowercase", "TitleCase"]
+		, "UPPERCASE", "lowercase", "TitleCase", "Indent", "UnIndent"]
 	
 	_Frozen := False
 	
@@ -58,7 +57,11 @@ class RichCode
 		}
 		
 		set {
+			FormatDinoStr(,,,,,{Escape: "\"})
+			HighlightDino(,,,true)
+			this.Modified:=false
 			this.Highlight(Value)
+			this.parent.UpdateStatusBar()
 			return Value
 		}
 	}
@@ -172,12 +175,13 @@ class RichCode
 	
 	; --- Construction, Destruction, Meta-Functions ---
 	
-	__New(Settings, Options:="")
+	__New(Settings, Options:="", IDE:="")
 	{
 		static Test
 		this.Settings := Settings
 		FGColor := this.BGRFromRGB(Settings.FGColor)
 		BGColor := this.BGRFromRGB(Settings.BGColor)
+		this.parent:=IDE
 		
 		Gui, Add, Custom, ClassRichEdit50W hWndhWnd +0x5031b1c4 +E0x20000 %Options%
 		this.hWnd := hWnd
@@ -260,6 +264,10 @@ class RichCode
 			this.SelectedText := Format("{:L}", this.SelectedText)
 		else if (ItemName == "TitleCase")
 			this.SelectedText := Format("{:T}", this.SelectedText)
+		else if (ItemName == "Indent")
+			this.IndentSelection()
+		else if (ItemName == "UnIndent")
+			this.IndentSelection(true)
 	}
 	
 	__Delete()
@@ -323,6 +331,13 @@ class RichCode
 		}
 		else if (Msg == 0x102) ; WM_CHAR
 		{
+			if (wParam=13) {
+				Top := this.SendMsg(0x436, 0, this.Selection[1]) ; EM_EXLINEFROMCHAR
+				ControlGet, Line, Line, % Top,, % "ahk_id" this.hWnd
+				if RegExMatch(Line, "^[ `t]+", Indent)
+					CursorPosBefore := this.Selection[1], len:=StrLen(Indent), this.SelectedText:=Indent, this.Selection := [CursorPosBefore+len, CursorPosBefore+len]
+				return true
+			}
 			switch (Chr(wParam))
 			{
 				case "(":
@@ -515,7 +530,10 @@ class RichCode
 		FileEncoding, UTF-8
 		FileRead, Text, %File%
 		If (Mode = "Open") {
+			if this.Open_File && !this.FileClose()
+				return 0
 			This.Value := Text
+			this.Add_Recent(File)
 		} Else If (Mode = "Insert") {
 			This.ReplaceSel(Text)
 		} Else If (Mode = "Append") {
@@ -524,6 +542,94 @@ class RichCode
 		}
 		Return True
    }
+
+   FileOpen(Opt:="") {
+		If (File := this.FileDlg("O")) {
+			GuiControl, Focus, % RC.HWND
+			return this.LoadFile(File, Opt)
+		}
+		return 0
+   }
+
+   FileSave() {
+		If !(this.Open_File) {
+			Return this.FileSaveAs()
+		}
+		GuiControl, Focus, % this.HWND
+		return this.SaveFile()
+   }
+
+   FileSaveAs(isnew:=false) {
+		If (File := this.FileDlg("S")) {
+			if isnew {
+				if (this.Open_File && !this.FileClose())
+					return 0
+				this.Value:=":MAIN`n   "
+				this.Selection:=[9,9]
+			}
+			result:=this.SaveFile(File)
+		}
+		GuiControl, Focus, % this.HWND
+		return result
+   }
+
+   FileClose(refresh:=false) {
+		result:=true
+		If (this.Open_File) {
+			If this.Modified {
+				Gui, +OwnDialogs
+				MsgBox, 35, Close File, Content has been modified!`nDo you want to save changes?
+				IfMsgBox, Cancel
+				{
+					GuiControl, Focus, % this.HWND
+					Return 0
+				}
+				IfMsgBox, Yes
+					result:=this.FileSave()
+			}
+			if !refresh {
+				Gui, +LastFound
+				WinGetTitle, Title
+				StringSplit, Title, Title, -, %A_Space%
+				WinSetTitle, %Title1%
+				this.Open_File:=this.Value:=""
+			}
+			GuiControl, Focus, % this.HWND
+		}
+		return result
+   }
+
+   Add_Recent(File:="") {
+		global ini
+		Menu, Opened, DeleteAll
+		if (ini="")
+			return
+		if File {
+			IniWrite, %File%, %ini%, GENERAL, last_opened
+			Menu, Opened, Add, %File%, Open_Recent
+			Gui, +LastFound
+			WinGetTitle, Title
+			StringSplit, Title, Title, -, %A_Space%
+			WinSetTitle, %Title1% - %File%
+			this.Open_File:=new_list:=File
+			Arg_in(this.Open_File)
+			Arg_OrigFilename(basename(this.Open_File))
+		}
+		IniRead, last_opened_list, %ini%, GENERAL, last_opened_list, 0
+		(last_opened_list=0) ? last_opened_list:=""
+		Loop, Parse, last_opened_list, `;
+		{
+			if (A_Index<=6) {
+				if (A_LoopField!=File&&FileExist(A_LoopField)) {
+					new_list.=";" . A_LoopField
+					Menu, Opened, Add, %A_LoopField%, Open_Recent
+				}
+			} else {
+				break
+			}
+		}
+		IniWrite, %new_list%, %ini%, GENERAL, last_opened_list
+	}
 
    GetZoom() { ; Gets the current zoom ratio.
       ; Returns the zoom ratio in percent.
@@ -558,17 +664,19 @@ class RichCode
       Return ErrorLevel
    }
 
-	SaveFile(File) { ; Save file
+	SaveFile(File:="") { ; Save file
       ; File : file name
       ; Returns True on success, otherwise False.
+	  static FileObj
       Gui, +OwnDialogs
 	  FileEncoding, UTF-8
+	  (File="")?File:=this.Open_File:add:=true
       If IsObject(FileObj := FileOpen(File, "w")) {
-         FileObj.Write(this.Value)
-         FileObj.Close()
-         Return True
+		 (add)?this.Add_Recent(File)
+         FileObj.Write(this.Value) ? this.Modified:=false
+         FileObj.Close(), FileObj:=""
       }
-      Return False
+      Return !this.Modified
    }
 
    ; ===================================================================================================================
@@ -766,7 +874,7 @@ class RichCode
 		Flags |= Mode = "O" ? OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY
 							: OFN_OVERWRITEPROMPT
 		VarSetCapacity(FileName, 1024, 0)
-		FileName := Name
+		FileName := Name, workdir:=A_WorkingDir
 		LenN1 := (StrLen(FilterN1) + 1) * 2, LenP1 := (StrLen(FilterP1) + 1) * 2
 		;LenN2 := (StrLen(FilterN2) + 1) * 2, LenP2 := (StrLen(FilterP2) + 1) * 2
 		;LenN3 := (StrLen(FilterN3) + 1) * 2, LenP3 := (StrLen(FilterP3) + 1) * 2
@@ -801,6 +909,8 @@ class RichCode
 		NumPut(&DefExt, OFN, Offset, "Ptr")    ; DefaultExt
 		R := Mode = "S" ? DllCall("Comdlg32.dll\GetSaveFileNameW", "Ptr", &OFN, "UInt")
 						: DllCall("Comdlg32.dll\GetOpenFileNameW", "Ptr", &OFN, "UInt")
+		; Ensure preserving the current work path
+		SetWorkingDir, % workdir
 		If !(R)
 			Return ""
 		DefFilter := NumGet(OFN, OffFilter, "UInt")

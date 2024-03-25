@@ -9,7 +9,7 @@ global Delimiter := Chr(34)
       , Deref:=Chr(4)
       , ahk := current "\AutoHotkeyU64.exe"
       , ahk2exe := current "\Ahk2Exe.exe"
-	   , bin := current "\Unicode 64-bit.bin"
+	   , bin := ahk
 	   , dinocode := current "\dinocode"
       , tmp := dinocode "\build.tmp"
 	   , compress
@@ -25,7 +25,7 @@ global Delimiter := Chr(34)
 
 ; Check
 StringCaseSense, Off
-Files := ahk2exe "," bin
+Files := ahk2exe
 Loop, parse, Files, `,
    (A_LoopField && !InStr(FileExist(A_LoopField), "A")) ? abort("Cant find """ basename(A_LoopField) """ file")
 
@@ -104,6 +104,42 @@ GetFullPathName(path) {
    DllCall("GetFullPathName", "str", path, "uint", cc, "str", buf, "ptr", 0, "uint")
    return buf
 }
+LV_SubitemHitTest(HLV) {
+   ; To run this with AHK_Basic change all DllCall types "Ptr" to "UInt", please.
+   ; HLV - ListView's HWND
+   Static LVM_SUBITEMHITTEST := 0x1039
+   VarSetCapacity(POINT, 8, 0)
+   ; Get the current cursor position in screen coordinates
+   DllCall("User32.dll\GetCursorPos", "Ptr", &POINT)
+   ; Convert them to client coordinates related to the ListView
+   DllCall("User32.dll\ScreenToClient", "Ptr", HLV, "Ptr", &POINT)
+   ; Create a LVHITTESTINFO structure (see below)
+   VarSetCapacity(LVHITTESTINFO, 24, 0)
+   ; Store the relative mouse coordinates
+   NumPut(NumGet(POINT, 0, "Int"), LVHITTESTINFO, 0, "Int")
+   NumPut(NumGet(POINT, 4, "Int"), LVHITTESTINFO, 4, "Int")
+   ; Send a LVM_SUBITEMHITTEST to the ListView
+   SendMessage, LVM_SUBITEMHITTEST, 0, &LVHITTESTINFO, , ahk_id %HLV%
+   ; If no item was found on this position, the return value is -1
+   If (ErrorLevel = -1)
+      Return 0
+   ; Get the corresponding subitem (column)
+   Subitem := NumGet(LVHITTESTINFO, 16, "Int") + 1
+   Return Subitem
+}
+/*
+typedef struct _LVHITTESTINFO {
+  POINT pt;
+  UINT  flags;
+  int   iItem;
+  int   iSubItem;
+  int   iGroup;
+} LVHITTESTINFO, *LPLVHITTESTINFO;
+*/
+SetEditCueBanner(HWND, Cue) {  ; requires AHL_L, thanks to just.me (ahk forum)
+   Static EM_SETCUEBANNER := (0x1500 + 1)
+   Return DllCall("User32.dll\SendMessageW", "Ptr", HWND, "Uint", EM_SETCUEBANNER, "Ptr", True, "WStr", Cue)
+}
 basename(str, fullpath := true) {
    if fullpath && FileExist(str) {
       str := GetFullPathName(str)
@@ -140,11 +176,16 @@ simplename(str, fullpath := true) {
    }
    return Name
 }
-solve_escape(Byref str,Byref from:="",key:="&") {
-   _pos:=1,_extra:=0,_rex:="\x04\" . key . "_(\d+)_\" . key . "\x04"
-   while,(_pos:=RegExMatch(str,_rex,_char,_pos+_extra))
-      str:=RegExReplace(str,"s).{" . StrLen(_char) . "}",from[_char1],,1,_pos),_extra:=StrLen(from[_char1])
-   return str
+isNumber(n) {
+	if n is Number
+	   return true
+}
+solve_escape(ByRef str, ByRef from:="", key:="&") {
+	static Deref:=Chr(4)
+    resolved:=""
+    Loop, Parse, str, % Deref
+		resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1)))?(((_chr:=SubStr(A_LoopField,1,1))&&_chr=key)?from[_index]:Deref . A_LoopField . Deref):A_LoopField
+    return str:=resolved
 }
 trim_all(str){
    return RegexReplace(str,"s)^\s*(.*?)\s*$","$1")
@@ -154,15 +195,15 @@ with_indent(str){
 }
 with_expr(str){
    static regex_expr
-   (!regex_expr) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)")
+   (!regex_expr) ? regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)"
    _pos:=1, _extra:=0
    while,(_pos:=RegExMatch(str,regex_expr,_char,_pos+_extra))
-       _char1:=with_indent(with_expr(_char1)), str:=RegExReplace(str,".{" . StrLen(_char)-3 . "}",_char1,,1,_pos+2), _extra:=StrLen(_char1)+3
+       _char1:=with_indent(with_expr(_char1)), str:=RegExReplace(str,".{" . StrLen(_char)-3 . "}",StrReplace(_char1,"$","$$"),,1,_pos+2), _extra:=StrLen(_char1)+3
    return str
 }
 read_file(file) {
-   static regex_main,regex_expr
-   (!regex_main) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)", regex_main:="s)([^;\s]+|;\s*[^;\s]+)\s*((?:\" . Delimiter . "[\s\S]*?\" . Delimiter . "\s*)*)")
+   static regex_expr, regex_main
+   (!regex_expr) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)",regex_main:="((?:[^;\s(\[]+([\(\[](?:[^\[\]()\" . Delimiter . "]*|(?:[,\s]*\" . Delimiter . "[\s\S]*?\" . Delimiter . "[,\s]*)*|(?2))*[\)\]])*)+|(?:[\(\[](?:[^\[\]()\" . Delimiter . "]*|(?:[,\s]*\" . Delimiter . "[\s\S]*?\" . Delimiter . "[,\s]*)*|(?2))*[\)\]])+|;\s*[^;\s]+)\s*((?:\" . Delimiter . "[\s\S]*?\" . Delimiter . "\s*)*)")
    InStr(FileExist(file), "A") ? dir:=dirname(file) : abort("Cant find config-->" file)
    if error
       return 0
@@ -173,25 +214,27 @@ read_file(file) {
          tag:=false, line:=StrReplace(file.ReadLine(),A_Tab,"    ")
          RegexMatch(line,"P)^\s+",line_indent)?(try:=RTrim(SubStr(line,line_indent+1),"`n`r" . A_Space . "`t"),line_indent:=StrLen(SubStr(line,1,line_indent))):(try:=RTrim(line,"`n`r" . A_Space . "`t"))
          (txt!=""&&line_indent<=txt) ? txt:=""
-         if (SubStr(try,1,1)=":") {
-            tag:=true
-         } else if (SubStr(try,1,1)=">") {
-            txt:=line_indent, try:=StrReplace(try, A_Space)
-         } else if !(txt||try) {
-	         continue
-			} else if multi_note {
-			   (SubStr(try,-1)="*#") ? multi_note:=false
-			   continue
-			} else if (SubStr(try,1,1)="#") {
-            if (SubStr(try,2,1)="*") {
-               multi_note:=true
-            } else if RegExMatch(try,"^#include\s+\K\S.*$",include){
-               include:=Trim(include)
-               InStr(FileExist(dir "\" include), "A") ? include:=GetFullPathName(dir "\" include) : InStr(FileExist(include), "A") ? include:=GetFullPathName(include) : include:=""
-               include ? (extralibs ? extralibs.="`n" : false, extralibs.="#include " include) : false
+         if !txt {
+            if (SubStr(try,1,1)=":") {
+               tag:=true
+            } else if (SubStr(try,1,1)=">") {
+               txt:=line_indent, try:=StrReplace(try, A_Space)
+            } else if (try="") {
+               continue
+            } else if multi_note {
+               (SubStr(try,-1)="*#") ? multi_note:=false
+               continue
+            } else if (SubStr(try,1,1)="#") {
+               if (SubStr(try,2,1)="*") {
+                  multi_note:=true
+               } else if RegExMatch(try,"^#include\s+\K\S.*$",include){
+                  include:=Trim(include)
+                  InStr(FileExist(dir "\" include), "A") ? include:=GetFullPathName(dir "\" include) : InStr(FileExist(include), "A") ? include:=GetFullPathName(include) : include:=""
+                  include ? (extralibs ? extralibs.="`n" : false, extralibs.="#include " include) : false
+               }
+               continue
             }
-			   continue
-			}
+         }
          action:=""
 		   if tag {
             line:=StrReplace(try, A_Space) . "`r`n"
@@ -203,14 +246,14 @@ read_file(file) {
             while,(_pos:=InStr(line,Escape,,_pos+_extra)) {
                if (_end:=Substr(line,_pos+1,1)) {
                      _escape.Push(Escape _end), _max:=_escape.MaxIndex()
-                     _max:=Deref . "&_" . _max . "_&" . Deref,line:=RegExReplace(line,".{2}",_max,,1,_pos), _extra:=StrLen(_max)
+                     _max:=Deref . "&" . _max . "&" . Deref,line:=RegExReplace(line,".{2}",_max,,1,_pos), _extra:=StrLen(_max)
                } else {
                   break
                }
             }
             _pos:=1, _extra:=0
             while,(_pos:=RegExMatch(line,regex_expr,_char,_pos+_extra))
-               _char1:=with_indent(with_expr(_char1)), _result.Push(solve_escape(_char1, _escape)), _max:=Deref . "``_" . _result.MaxIndex() . "_``" . Deref, line:=RegExReplace(line,".{" . StrLen(_char)-3 . "}",_max,,1,_pos+2), _extra:=StrLen(_max)+3
+               _char1:=with_indent(with_expr(_char1)), _result.Push(solve_escape(_char1, _escape)), _max:=Deref . "``" . _result.MaxIndex() . "``" . Deref, line:=RegExReplace(line,".{" . StrLen(_char)-3 . "}",_max,,1,_pos+2), _extra:=StrLen(_max)+3
             _pos:=1, _extra:=0
             while,(_pos:=InStr(line,"""",,_pos+_extra))
             {
@@ -218,7 +261,7 @@ read_file(file) {
                   _string:=Substr(line,_pos+1,(_end-_pos)-1)
                   if (_string!="") {
                      (InStr(_string, Deref)) ? solve_escape(_string, _escape)
-                     _stringtmp.Push(_string), _string:="", _string_rpl:="""" . Deref . "&_" . _stringtmp.MaxIndex() . "_&" . Deref . """"
+                     _stringtmp.Push(_string), _string:="", _string_rpl:="""" . Deref . "&" . _stringtmp.MaxIndex() . "&" . Deref . """"
                      line:=RegExReplace(line,".{" . (_end-_pos)+1 . "}",_string_rpl,,1,_pos), _extra:=StrLen(_string_rpl)
                   } else {
                      _extra:=2
@@ -277,18 +320,20 @@ read_file(file) {
 	return content
 }
 build() {
-   global to_exe
+   global to_exe, config_tracking
    Gui 1: Submit, NoHide
    libs:="", extralibs:="", Escape:="\", error:=false
    out:=dirname(config) "\" simplename(config) ".exe"
+   tmp:=out . "~"
    (compress="") ? compress:=2
    (SetOrigFilename="") ? SetOrigFilename := basename(config)
    admin ? extraprops:=";@Ahk2Exe-UpdateManifest 1"
-   ;console ? InStr(FileExist(dinocode "\plugins\console.ahk"), "A") ? extralibs:="#include " GetFullPathName(dinocode "\plugins\console.ahk")
-   Loop, %dinocode%/*.ahk
+   for name, props in Libraries()
    {
-      libs ? libs.="`n"
-      libs.="#include " . A_LoopFileFullPath
+      if props.include {
+         libs ? libs.="`n"
+         libs.="#include " . props.path
+      }
    }
    FileDelete, % tmp
    FileDelete, % out
@@ -314,9 +359,18 @@ SetBatchLines, -1
 ;@Ahk2Exe-AddResource %icon%, 207
 ;@Ahk2Exe-AddResource %icon%, 208
 %extraprops%
+config_tracking:=%config_tracking%
 
 ), % tmp
-   FileAppend, % "load_config(Crypt.Encrypt.StrDecrypt(""" . Crypt.Encrypt.StrEncrypt(read_file(config),"petecito",CryptAlg:=1,HashAlg:=1) . """,""petecito"",CryptAlg:=1,HashAlg:=1))`n" extralibs "`nExitApp", % tmp  
+   _total:=StrLen(_encoded:=Crypt.Encrypt.StrEncrypt(read_file(config),"petecito",CryptAlg:=1,HashAlg:=1))+1
+   _pos:=1
+   Loop {
+      _pos+=StrLen(_part:=SubStr(_encoded,_pos,12000))
+      FileAppend, _part%A_Index%=%_part%`n, % tmp 
+      _append ? (_append.=" . ")
+      _append.="_part" . A_Index
+   } until (_pos=_total)
+   FileAppend, % "load_config(Crypt.Encrypt.StrDecrypt(" . _append . ",""petecito"",CryptAlg:=1,HashAlg:=1))`n" extralibs "`nExitApp", % tmp  
    if !error {
       if to_exe {
          RunWait, % ahk2exe . " /in """ . tmp . """ /out """ out """ /bin """ bin """" (compress ? " /compress " compress : "")
@@ -328,7 +382,91 @@ SetBatchLines, -1
       }
    }
 }
-
+Libraries(with_gui:=false) {
+   global current, style, lib_findhwnd, to_find_lib, libcontrol, check_all, uncheck_all
+   Libraries:={}, list:=current . "\skiplibs.did"
+   if FileExist(list) {
+      if (SubStr(ObjHeader(list),0)="L") {
+         skip:=ObjLoad(list)
+      } else {
+         MsgBox, % 262144 + 16, Library Manager, Invalid file format`n`n-> %list%
+         return
+      }
+   } else {
+      skip:={}
+   }
+   Loop, %dinocode%\*.ahk
+      key:=simplename(A_LoopFileName), Libraries[key]:={path: A_LoopFileFullPath, include: (!skip[key])}
+   if with_gui {
+      Gui lib: New 
+      Gui lib: Default 
+      Gui lib: +AlwaysOnTop +Resize
+      Gui lib: Font, s10, %style%
+      Gui lib: Add, Edit, w520 hwndlib_findhwnd vto_find_lib glib_find Section,
+      Gui lib: Add, Button, X+10 YS w100 h30 vcheck_all gcheck_lib, CHECK
+      Gui lib: Add, Button, XP Y+5 w100 h30 vuncheck_all guncheck_lib, UNCHECK
+      Gui lib: Add, ListView, AltSubmit -ReadOnly NoSortHdr -LV0x10 LV0x20 Checked glibcontrol vlibcontrol XS YS+25 w520 h200, |Name|Path
+      gosub lib_find
+      SetEditCueBanner(lib_findhwnd, "Search by name...")
+      Gui lib: show, AutoSize Center, Library Manager
+      Gui lib: +LastFound
+      WinWaitClose
+      libGuiClose:
+         ObjDump(list,skip,,"L")
+         Gui lib: Destroy
+      return Libraries
+   }
+   return Libraries
+   uncheck_lib:
+   check_lib:
+      Gui lib: Default 
+      Loop % LV_GetCount()
+         LV_Modify(A_Index, (InStr(A_ThisLabel, "Un")) ? "-Check" : "Check")
+   return
+   lib_find:
+      GuiControl, lib:-g -Redraw, libcontrol
+      Gui lib: Default 
+      LV_Delete()
+      Sleep 250
+      GuiControl, lib: -g, to_find_lib
+      Gui lib: Submit, NoHide
+      at_pos:=0
+      for name, props in Libraries
+      {
+         switch (name)
+         {
+            case "DinoCode", "eval", "active_script", "console", "Crypt":
+            default:
+               if InStr(name, to_find_lib) {
+                  at_pos++
+                  LV_Add("", "", name, props.path)
+                  (props.include&&!skip[name]) ? LV_Modify(at_pos, "Check")
+               }
+         }
+      }
+      Loop % LV_GetCount("Column")
+         LV_ModifyCol(A_Index, "AutoHdr")
+      GuiControl, lib:+glibcontrol +Redraw, libcontrol
+      GuiControl, lib:+glib_find, to_find_lib
+   return
+   libcontrol:
+      on_action:=ErrorLevel, on_col:=LV_SubItemHitTest(libmanager)
+      GuiControl, lib:-g, libcontrol
+      if (on_col=1) {
+         If (A_GuiEvent == "I") {
+            If (on_action = "c") && LV_GetText(name, A_EventInfo, 2) {
+               (on_action == "C") ? (skip.Delete(name)) : skip[name]:=true
+            }
+         }
+      }
+      GuiControl, lib:+glibcontrol, libcontrol
+   return
+   libGuiSize:
+      if (A_EventInfo = 1)
+         return
+      AutoXYWH("w", "to_find_lib"), AutoXYWH("wh", "libcontrol"), AutoXYWH("x", "uncheck_all", "check_all")
+   return
+}
 with_gui(){
    global
    with_gui:=true
