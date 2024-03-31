@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<foods>
-    <food>
-        <name>Pizza</name>
-        <type>Italian</type>
-        <ingredients>Cheese, Tomato Sauce, Dough</ingredients>
-        <description>A savory dish consisting of a round, flattened base of dough topped with tomato sauce, cheese, and various toppings.</description>
-    </food>
-    <food>
-        <name>Sushi</name>
-        <type>Japanese</type>
-        <ingredients>Rice, Fish, Nori (Seaweed)</ingredients>
-        <description>A Japanese dish consisting of small balls or rolls of vinegar-flavored cold rice served with a garnish of raw fish, vegetables, or egg.</description>
-    </food>
-    <food>
-        <name>Tacos</name>
-        <type>Mexican</type>
-        <ingredients>Tortilla, Meat (e.g., Beef, Chicken, Pork), Salsa, Lettuce, Cheese</ingredients>
-        <description>A traditional Mexican dish consisting of a folded or rolled tortilla filled with various ingredients.</description>
-    </food>
-</foods>
+<food>
+    <name>Pizza</name>
+    <type>Italian</type>
+    <ingredients>Cheese, Tomato Sauce, Dough</ingredients>
+    <description>A savory dish consisting of a round, flattened base of dough topped with tomato sauce, cheese, and various toppings.</description>
+</food>
+<food>
+    <name>Sushi</name>
+    <type>Japanese</type>
+    <ingredients>Rice, Fish, Nori (Seaweed)</ingredients>
+    <description>A Japanese dish consisting of small balls or rolls of vinegar-flavored cold rice served with a garnish of raw fish, vegetables, or egg.</description>
+</food>
+<food>
+    <name>Tacos</name>
+    <type>Mexican</type>
+    <ingredients>Tortilla, Meat (e.g., Beef, Chicken, Pork), Salsa, Lettuce, Cheese</ingredients>
+    <description>A traditional Mexican dish consisting of a folded or rolled tortilla filled with various ingredients.</description>
+</food>
