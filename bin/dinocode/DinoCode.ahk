@@ -99,7 +99,8 @@ OnMessage(KeyDown:=0x100, "__DinoEvent__")
 ; ConfigRC
 config_rc() {
    ; Native
-   ; GLOBAL.false:=0, GLOBAL.true:=1, GLOBAL.verdadero:=1, GLOBAL.falso:=0
+   ; Currently a global definition as AHK variables for constants is preferred
+   ; Removed:   GLOBAL.false:=0, GLOBAL.true:=1, GLOBAL.verdadero:=1, GLOBAL.falso:=0
 }
 
 ; Event control
@@ -413,8 +414,8 @@ ReadFile(file,enc:="UTF-8") {
    try {
       FileEncoding, % enc
       FileRead, content, % file
-   } catch {
-      unexpected:="Cant read-->""" file """, Ended with: " ErrorLevel
+   } catch e {
+      unexpected:="Cant read-->""" file """, Ended with: " e.message
    }
    return content
 }
@@ -424,8 +425,8 @@ WriteFile(file, content:="", enc:="UTF-8-RAW") {
 	FileCreateDir, % dest
     FileAppend, % content, % file, % enc
 	return 1
-   } catch {
-    unexpected:="Cant write in: """ file """, Ended with: " ErrorLevel
+   } catch e {
+    unexpected:="Cant write in-->""" file """, Ended with: " e.message
 	return 0
    }
 }
@@ -467,9 +468,9 @@ simplename(str, fullpath := true) {
 }
 Exist(options*) {
     type:=(options[1]="file"||options[1]="folder"||options[1]="hidden")?options.RemoveAt(1):""
-    for count, file in options
+    for count, path in options
     {
-        filetype:=FileExist(file)
+        filetype:=FileExist(path)
         switch type
         {
             case "file":
@@ -526,19 +527,11 @@ Copy(orig,dir,replace:=false) {
     return (ErrorLevel=0)
 }
 SelectFile(title:="",filter:="",rootdir:="",options:="") {
-   try {
-      FileSelectFile, result, % options, % rootdir, % title, % filter
-   } catch {
-      return 0
-   }
+   try FileSelectFile, result, % options, % rootdir, % title, % filter
    return result
 }
 SelectFolder(prompt:="",rootdir:="",options:="") {
-   try {
-      FileSelectFolder, result, % rootdir, % options, % prompt
-   } catch {
-      return 0
-   }
+   try FileSelectFolder, result, % rootdir, % options, % prompt
    return result
 }
 list(options*) {
@@ -589,7 +582,7 @@ class DObj
         if GLOBAL.HasKey(key) {
             GLOBAL[key]:=value
 			return
-		} else if (shared_vars&&key~=shared_vars)&&!(skip_vars&&key~=skip_vars) {
+		} else if (key="Clipboard")||((shared_vars&&key~=shared_vars)&&!(skip_vars&&key~=skip_vars)) {
 			%key%:=value
 			return
 		}
@@ -674,7 +667,8 @@ lang(key:="",str:="",regex:=false,group:="langs",add:="",reset:=false) {
 			 do: ["hacer"],
 			 use: ["usar"],
 			 for: ["para"],
-			 forchar: ["paracaracter"]
+			 forchar: ["paracaracter"],
+			 forobj: ["paraobjeto"]
 		  }
 	   )
 	   case:=
@@ -827,18 +821,18 @@ maps(key:="",add:="",reset:=false) {
 			 eval: {eval: {literal:true, max:1, ignore_func:true}},
 			 for: {for: {literal:-1, max:2}, in: {support: true, literal:3}},
 			 forchar: {forchar: {max:1}, in: {support: true, literal:3}},
-			 switch: {switch: {max:2}},
-			 list: {list: {literal:true}},
-			 exist: {exist: {literal:true}, with: {support: true, concat:"exist"}},
-			 SelectFile: {SelectFile: {max:2, at:"1,4", atpos:true}, with: {support:true, max:1, at:2}, in: {support:true, max:1, at:3}},
-			 SelectFolder: {SelectFolder: {max:2, at:"1,3", atpos:true}, in: {support:true, max:1, at:2}}
+			 forobj: {forobj: {literal:-1, max:2}, in: {support: true, literal:3}},
+			 switch: {switch: {max:2}}
 		   }
 		)
 	   ; Custom definitions
 	   maps2:=
        (join
           {
-			 
+			 list: {list: {literal:true}},
+			 exist: {exist: {literal:true}, with: {support: true, concat:"exist"}},
+			 SelectFile: {SelectFile: {max:2, at:"1,4", atpos:true}, with: {support:true, max:1, at:2}, in: {support:true, max:1, at:3}},
+			 SelectFolder: {SelectFolder: {max:2, at:"1,3", atpos:true}, in: {support:true, max:1, at:2}}
 		  }
 	   )
 	   for k, value in maps2
@@ -869,9 +863,9 @@ GetNextToken(ByRef s, Byref p, len:=0, Byref _chr:="", Byref _lastchr:="", Byref
               break
            else
               p++
-		} else if (_char="(")
+		} else if _char=(
             _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,,,len)
-		else if (_char="[")
+		else if _char=[
             _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,"[","]",len)
 		else if word&&(_char=".")
 			_chr:="%", _lastchr:=_char, p+=1
@@ -896,6 +890,7 @@ GetNextToken(ByRef s, Byref p, len:=0, Byref _chr:="", Byref _lastchr:="", Byref
 }
 GetNextObjRef(ByRef s, Byref word, Byref p, len:=0)
 {
+	static Deref:=Chr(4), Expr:="``"
 	p:=(p)?p:1, len:=(len)?len:StrLen(s)
 	while,(p>0&&p<=len)
 	{
@@ -906,13 +901,13 @@ GetNextObjRef(ByRef s, Byref word, Byref p, len:=0)
            else
               word:=0, p+=1
 		} else if word {
-			if (_char="(")
+			if _char=(
             	p:=EnclosingWithQuotes(s,p,,,len)
-			else if (_char="[")
+			else if _char=[
 				objref:=true, p:=EnclosingWithQuotes(s,p,"[","]",len)
-			else if (_char=".")
+			else if _char=.
 				objref:=true, p+=1
-            else if (_char="_")||(_char="$")
+            else if (_char="_")||(_char="$")||(_char=Deref)||(_char=Expr)
                 p++
 			else if _char is alnum
 				p++
@@ -922,7 +917,7 @@ GetNextObjRef(ByRef s, Byref word, Byref p, len:=0)
                 word:=0, p+=1
 			if (p=0)
                word:=0, p:=-1
-        } else if (_char="_")||(_char="$")
+        } else if (_char="_")||(_char="$")||(_char=Deref)||(_char=Expr)
             word:=p, p+=1
 		else if _char is alpha
 			word:=p, p+=1
@@ -930,6 +925,28 @@ GetNextObjRef(ByRef s, Byref word, Byref p, len:=0)
             p++
 	}
     return (objref&&word)?SubStr(s,word,p-word):""
+}
+GetNextMethod(ByRef s, Byref p, len:=0, Byref isdot:=false)
+{
+	p:=(p)?p:1, len:=(len)?len:StrLen(s), isdot:=false
+	while,(p>0&&p<=len)
+	{
+		_char:=SubStr(s, p, 1)
+		if (_char=A_Space||_char=A_Tab)
+        break
+		else if _char=.
+        method:=p,isdot:=!_key,p:=_key?p:p+1
+        else if _char=(
+        method:=p, p:=_key?p:EnclosingWithQuotes(s,p,,,len)
+        else if _char=[
+        method:=p, p:=_key?p:EnclosingWithQuotes(s,p,"[","]",len)
+        else if _key=
+        _key:=p
+        if method
+        break
+        p++
+	}
+    return _key?(SubStr(s,_key,p-_key)):((method)?SubStr(s,method,p-method):"")
 }
 EscapeStr(Byref read_line, Byref Escape, Byref _escape) {
     static Deref:=Chr(4)
@@ -944,9 +961,8 @@ EscapeStr(Byref read_line, Byref Escape, Byref _escape) {
             unexpected:="A closure was expected--->"""
             break
         } else {
-            _escape.Push(EscapeChars(SubStr(read_line,_pos+1,(_end-_pos)-1), Escape))
-            resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . """" . Deref . "&" . _escape.MaxIndex() . "&" . Deref . """"
-            _extra:=(_end-_pos)+1, _last:=_end
+			((_end-_pos)-1=0) ? (resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . """"""):(_escape.Push(EscapeChars(SubStr(read_line,_pos+1,(_end-_pos)-1), Escape)), resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . """" . Deref . "&" . _escape.MaxIndex() . "&" . Deref . """")
+			_extra:=(_end-_pos)+1, _last:=_end
         }
     }
     return (_last)?resolvedstr . SubStr(read_line, _last+1) : read_line
@@ -968,6 +984,20 @@ solve_escape(ByRef str, ByRef from:="", key:="&") {
     Loop, Parse, str, % Deref
 		resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1)))?(((_chr:=SubStr(A_LoopField,1,1))&&_chr=key)?from[_index]:Deref . A_LoopField . Deref):A_LoopField, resolved_end:=A_Index
     return (resolved_end>1)?str:=resolved:str
+}
+solve_any_escape(ByRef str, Byref _escape:="", Byref _result:="", ByRef _evaluated:="", Byref _hasexpr:=0) {
+	static Deref:=Chr(4)
+    resolved:="",resolved_end:=0
+    Loop, Parse, str, % Deref
+		resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1))&&(_chr:=SubStr(A_LoopField,1,1)))?((_chr="&")?(solve_escape_string(_escape[_index],_result,_evaluated,_hasexpr)):((_chr="~")?_evaluated[_index]:((_chr="``")?_result[_index]:Deref . A_LoopField . Deref))):A_LoopField, resolved_end:=A_Index
+    return (resolved_end>1)?resolved:str
+}
+solve_escape_string(ByRef str, Byref _result:="", ByRef _evaluated:="", Byref _hasexpr:=0) {
+	static Deref:=Chr(4)
+    resolved:="",resolved_end:=0
+    Loop, Parse, str, % Deref
+		resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1))&&(_chr:=SubStr(A_LoopField,1,1)))?((_chr="~")?(_evaluated[_index]):((_chr="``")?((_index<=_hasexpr)?_result[_index]:((_hasexpr+=1)?load_config(Substr(_result[_index],3,-1),,,FD_CURRENT,"resolve",,false):"")):Deref . A_LoopField . Deref)):A_LoopField, resolved_end:=A_Index
+    return (resolved_end>1)?resolved:str
 }
 load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",newmain:=false,ResetEval:=true) {
    global unexpected,secure_user_info,config_tracking
@@ -1113,7 +1143,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				_for_vars.Push(_for.for.1), _for_vars.Push(_for.for.2)
 			  } else {
 				for key, val in _for.in {
-					FD[outfd][_for.for.1]:=Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,3), FD[outfd].Index:=A_Index
+					FD[outfd][_for.for.1]:=Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2), FD[outfd].Index:=A_Index
 					to_return:=load_config(block_capture,,,outfd,block_type)
 					FD_CURRENT:=outfd
 					if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
@@ -1140,6 +1170,40 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 						continue
 					}
 			  }
+		   } else if (block_key="forobj") {
+			  	Index:=1, _for:=read_line_, read_line_:="", _for_vars:=[_for.forobj.1, _for.forobj.2]
+                if _for.forobj.2 {
+					for key, val in _for.in {
+						for key2, val2 in Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2) {
+							FD[outfd][_for_vars.1]:=key2, FD[outfd][_for_vars.2]:=val2, FD[outfd].Index:=Index
+							to_return:=load_config(block_capture,,,outfd,block_type)
+							FD_CURRENT:=outfd
+							if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
+								break 2
+							else if (SIGNALME.code=3.1) {
+								SIGNALME.code:=""
+								continue
+							}
+							Index++
+						}
+					}
+				} else {
+					for key, val in _for.in {
+						for key2 in Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2) {
+							FD[outfd][_for_vars.1]:=key2, FD[outfd].Index:=Index
+							to_return:=load_config(block_capture,,,outfd,block_type)
+							FD_CURRENT:=outfd
+							if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
+								break 2
+							else if (SIGNALME.code=3.1) {
+								SIGNALME.code:=""
+								continue
+							}
+							Index++
+						}
+					}
+				}
+				_for:=""
 		   } else if (block_key="switch") {
 			  _switch:=read_line_.switch.1, _switch_sensitive:=read_line_.switch.2, _case_indent:=_switch_block:=_switch_pass:=""
 			  Loop, parse, block_capture, `n
@@ -1175,10 +1239,10 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			     return to_return
 			  } else {
 			     SIGNALME.code:=""
-		         return Eval(to_return, FD,,_escape,_result,_evaluated,3)
+		         return Eval(to_return, FD,,_escape,_result,_evaluated,2)
 			  }
 		   } else if (Floor(SIGNALME.code)=3) {
-			  (block_key="while"||block_key="until"||block_key="for"||block_key="forchar") ? SIGNALME.code:=""
+			  (block_key="while"||block_key="until"||block_key="for"||block_key="forchar"||block_key="forobj") ? SIGNALME.code:=""
 			  if SIGNALME.code
 				 return SIGNALME.exit
 		   }
@@ -1189,7 +1253,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		    last_label:=back_label,(!(block_key="use"&&read_line2)) ? (read_line2:=orig_block,line:=orig_line)
 			break
 	     } else {
-			if (block_key="for")||(block_key="forchar") {
+			if (block_key="for")||(block_key="forchar")||(block_key="forobj") {
                for key, val in _for_vars
 			       FD[outfd][val]:=""
 			   FD[outfd].Index:=Index:=_for_vars:=""
@@ -1236,13 +1300,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			for count, _eval in _toval
 			{
 				if (Mod(A_Index,2)=0) {
-					if (_eval="") {
-						continue
-					}
+					if _eval=
+					continue
 					_eval:=Eval(_eval, FD,,_escape,,,3)
 					if isObject(SIGNALME.unexpected)
 						break 2
-					if (_eval="")
+					if _eval=
 						continue
 					else if _eval is Number
 						read_line.=_eval
@@ -1311,8 +1374,8 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			   continue
 			}
 		 }
-		 is_loop:=(block_key="while"||block_key="until"||block_key="for"||block_key="forchar")
-		 if (block_key="for"||block_key="forchar"||block_key="switch") {
+		 is_loop:=(block_key="while"||block_key="until"||block_key="for"||block_key="forchar"||block_key="forobj")
+		 if (block_key="for"||block_key="forchar"||block_key="forobj"||block_key="switch") {
 			if is_loop
 				_escapetmp:=_escape,_resulttmp:=_result,_evaluatedtmp:=_evaluated
 			with_partial:=block_key, block_with:=""
@@ -1350,9 +1413,9 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 if (from_type&&lang(,from_type,,"condition")&&SIGNALME.code:=2)
 		    return _return
 		 else
-		    return Eval(_return, FD,,_escape,_result,_evaluated,3)
+		    return Eval(_return, FD,,_escape,_result,_evaluated,2)
 	  }
-	  if _hasexpr&&(with_partial!="for") {
+	  if _hasexpr&&!(with_partial="for"||with_partial="forobj") {
 		_resulttmp:=_result,_evaluatedtmp:=_evaluated,_escapetmp:=_escape,_result:=[],_evaluated:=[]
 		while,(_hasexpr<=_maxexpr)
 		{
@@ -1375,7 +1438,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
                    main_orig:=option, main_action:=with_partial, option:=main_action, maps:=maps(main_action)
 			    } else if (_isexpr:=(_chrfound="%"))||(_chrfound="``")||((_chr:=SubStr(option,-1))&&(_chr="++"||_chr="--")) {
 					if _isexpr
-						Eval(option, FD,,_escape,_result,_evaluated,3)
+						Eval((SubStr(option,1,1)="(")?SubStr(option, 2, -1):option, FD,,_escape,_result,_evaluated,3)
 					else if _chr
 					   (FD[outfd].HasKey(_var:=SubStr(option,1,-2))) ? (((_chr="++") ? FD[outfd][_var]++ : FD[outfd][_var]--),to_return:=FD[outfd][_var]) : (to_return:=Eval(option, FD,,_escape,_result,_evaluated,3))
 					if unexpected
@@ -1393,17 +1456,19 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 					}
 				}
 			}
-			if (A_Index=1)||(force_literal=3)||(_isstr:=(_chrfound=Delimiter))||(_literal:=(_chrfound="``")?"$":"")||(_number:=(isNumber(SubStr(option,1,2))))||(force_literal=2)||(_isexpr:=(_chrfound="%"))||(custom_option&&option:=lang(main_action,option,,"custom"))||(option:=lang(,_token,,"connectors"))||always_literal||(_isvar:=FD[outfd].HasKey(_token))||(_expand:=(SubStr(_token,0)="*"))
+			if (A_Index=1)||(force_literal=3)||(_isstr:=(_chrfound=Delimiter))||(_literal:=(_chrfound="``")?"$":"")||(_number:=(isNumber(SubStr(option,1,2))))||(force_literal=2)||(_isexpr:=(_chrfound="%"))||(custom_option&&option:=lang(main_action,option,,"custom"))||(option:=lang(,_token,,"connectors"))||always_literal||(unexpected:=(_token=")")?"Closing -> ')' without opening -> '('":"")||(_isvar:=FD[outfd].HasKey(_token))||(_expand:=(SubStr(_token,0)="*"))
 			{
+				if unexpected
+				break 2
 				if (_isstr||_expand||_literal||_number||_isvar||_isexpr) {
 				   if (option:=_lastoption) {
 					  (_expand) ? (_token:=SubStr(_token,1,-1)) : ((_expand:=(SubStr(_token,0)="*")) ? (_token:=SubStr(_token,1,-1)) : false)
-				      (!_isstr) ? (_var:=(_isexpr&&!always_literal) ? Eval(_token,FD,,_escape,_result,_evaluated,2,_hasexpr) : ((always_literal&&maps[always_literal].literal>0) ? solve_escape(_token, _escape) : _token))
+				      (!_isstr) ? (_var:=(_isexpr&&!always_literal) ? Eval((SubStr(_token,1,1)="(")?SubStr(_token, 2, -1):_token,FD,,_escape,_result,_evaluated,2,_hasexpr) : ((always_literal&&maps[always_literal].literal>0) ? solve_escape(_token, _escape) : _token))
 					  _literal ? (inkey:=SubStr(_var,3,-2))
 					  if unexpected
 					  break 2
 					  if _isstr
-					  	   read_line_[option].Push(solve_escape(solve_escape(solve_escape(SubStr(_token, 2, -1), _escape), _result, "``"), _evaluated, "~"))
+					  	   read_line_[option].Push(solve_escape_string(_escape[SubStr(_token, 4, -3)],_result,_evaluated,_hasexpr))
 				      else if _expand {
 						  if (_literal="$") {
 							if isObject(_result[inkey]) {
@@ -1442,8 +1507,8 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				} else if always_literal {
 					(force_literal||option="") ? (option:=always_literal, overwrite:=false, read_line_[option].Push(_token))
 				}
-				maps[option].concat ? (option:=maps[option].concat, overwrite:=false)
 				force_literal:=(always_literal:=maps[option].literal ? option : false) ? ((maps[option].literal>1) ? maps[option].literal : false) : false
+				maps[option].concat ? (option:=maps[option].concat, overwrite:=false)
 				(overwrite||!isObject(read_line_[option])) ? (read_line_[option]:=[],_lastoption:=option)
 				if !(option=main_action||main_type="section") && !maps[option].support {
 				   unexpected:="""" . main_orig . """ doesn't support the connector--->" . _token
@@ -1517,9 +1582,8 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		switch (main_action) {
 		   case "global":
 			   for count, value in read_line_.global {
-				  if (value ~= "^[a-zA-Z_$][a-zA-Z0-9_$]*$") {
-					 FD[outfd].global(value)
-				  } else {
+				  try FD[outfd].global(value)
+				  catch {
 					 unexpected:="Invalid variable name--->" . value
 					 break 2
 				  }
@@ -1564,23 +1628,20 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				}
 				return 1
 		   case "set":
-			   if isObjRef(read_line_.set.1) {
-				   if RegexMatch(read_line_.set.1,"^[a-zA-Z_$][a-zA-Z0-9_$]*", _var) {
-						try {
-							(!isObject(FD[outfd][_var]))?FD[outfd][_var]:={}
-							ParseObjects(read_line_.set.1, FD, ":=", (read_line_.with.MaxIndex()>1) ? read_line_.with : read_line_.with.1,_escape, _result, _evaluated)
-						} catch {
-							unexpected:="Could not define var--->" . read_line_.set.1
-							break
-						}
-				   } else {
-						unexpected:="Invalid variable name--->" . read_line_.set.1
-				   		break
-				   }
+			   if (_var:=isObjRef(read_line_.set.1)) {
+				    _var:=SubStr(read_line_.set.1,1,_var)
+					try {
+						isObject(FD[outfd][_var])?(IsObject(read_line_.with)?false:FD[outfd][_var]:={}):FD[outfd][_var]:={}
+						ParseObjects(read_line_.set.1, FD, ":=", (read_line_.with.MaxIndex()>1) ? read_line_.with : read_line_.with.1,_escape, _result, _evaluated,_hasexpr)
+						if unexpected
+			   			break
+					} catch {
+						unexpected:="Could not define var--->" . read_line_.set.1
+						break
+					}
 			   } else {
-			       try {
-					  FD[outfd][read_line_.set.1]:=(read_line_.with.MaxIndex()>1) ? read_line_.with : read_line_.with.1
-				   } catch {
+			       try FD[outfd][read_line_.set.1]:=(read_line_.with.MaxIndex()>1) ? read_line_.with : read_line_.with.1
+				   catch {
 					  unexpected:="Could not define var--->" . read_line_.set.1
 					  break
 				   }

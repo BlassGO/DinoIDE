@@ -47,7 +47,13 @@ cmd(Byref opt*) {
     params:=""
     for count, value in opt
         params.=A_Space . ((value~="^\S+$") ? value:"""" . value . """")
-    RunWait, % ComSpec . " /c """ . params . """"
+    RunWait, % ComSpec . " /c """ . params . """",,UseErrorLevel
+    return ErrorLevel
+}
+
+ExplorerSelect(path) {
+    RunWait, %ComSpec% /c explorer.exe /select`,"%path%",,Hide UseErrorLevel
+    return ErrorLevel
 }
 
 StartConsole(title:="", w:=false, h:=false, x:="", y:="") {

@@ -3,11 +3,24 @@
 
 class File
 {
-    __New(file:="")
+    __New(file:="",encoding:="UTF-8-RAW",linebreak:="`n")
     {
-        (file!="") ? this.path:=file
-        this.encoding:="UTF-8-RAW"
-        this.linebreak:="`n"
+        (file!="")?this.path:=file
+        (encoding!="")?this.encoding:=encoding
+        this.linebreak:=linebreak
+    }
+    encoding[] {
+        get {
+            return this._encoding
+        }
+        set {
+            value:=Trim(value)
+            if (value~="^CP\d+|UTF-8|UTF-8-RAW|UTF-16|UTF-16-RAW$")
+                this._encoding:=value
+            else
+                unexpected:="Invalid encoding -> " . value
+            return this._encoding
+        }
     }
     path[] {
         get {
@@ -24,13 +37,17 @@ class File
     content[] {
         get {
             FileEncoding, % this.encoding
-            FileRead, content, % this.path
+            try FileRead, content, % this.path
+            catch e
+            unexpected:="Cant read-->""" this.path """, Ended with: " e.message
             return content
         }
         set {
             this.Delete()
             FileEncoding, % this.encoding
-            FileAppend, % value, % this.path
+            try FileAppend, % value, % this.path
+            catch e
+            unexpected:="Cant write in-->""" this.path """, Ended with: " e.message
         }
     }
     line[i:=1] {
@@ -81,22 +98,34 @@ class File
     }
     write(str) {
         FileEncoding, % this.encoding
-        FileAppend, % str, % this.path
+        try FileAppend, % str, % this.path
+        catch e
+        unexpected:="Cant write in: """ this.path """, Ended with: " e.message
+        return (ErrorLevel=0)
     }
     writeline(str:="") {
         FileEncoding, % this.encoding
-        FileAppend, % str . this.linebreak, % this.path
+        try FileAppend, % str . this.linebreak, % this.path
+        catch e
+        unexpected:="Cant write in: """ this.path """, Ended with: " e.message
+        return (ErrorLevel=0)
     }
     writeafter(str,str2:="") {
         if (_info:=this.find(str,,"lines info")) {
             _temp:=this.content, _info:=StrSplit(_info, "`n"), _POS:=SubStr(_info[1],5), _LEN:=SubStr(_info[2],5)
             this.content:=RTrim(SubStr(_temp,1,_POS+_LEN),"`r`n") . this.linebreak . str2 . this.linebreak . LTrim(SubStr(_temp,_POS+_LEN+1),"`r`n")
+            return 1
+        } else {
+            return 0
         }
     }
     writebefore(str,str2:="") {
         if (_info:=this.find(str,,"lines info")) {
             _temp:=this.content, _info:=StrSplit(_info, "`n"), _POS:=SubStr(_info[1],5), _LEN:=SubStr(_info[2],5)
             this.content:=RTrim(SubStr(_temp,1,_POS-1),"`r`n") . ((_POS-1>0)?this.linebreak:"") . str2 . this.linebreak . LTrim(SubStr(_temp,_POS),"`r`n")
+            return 1
+        } else {
+            return 0
         }
     }
     writeraw(str:="",bytes:="",fill:=0) {
@@ -136,8 +165,13 @@ class File
         File.Seek(0,0)
         bytelen3:=StrLen(hexReplace)//2
         this.Hex2Bin(bytereplace,hexReplace,bytelen3)
-        if offset && !(File.RawRead(Buffer, offset)&&_temp.RawWrite(&Buffer, offset)) {
-            return 0
+        if offset {
+            while (offset>0) {
+                segmentSize:=Min(offset, chunkSize)
+                if !(File.RawRead(Buffer, segmentSize)&&_temp.RawWrite(&Buffer, segmentSize))
+                    return 0
+                offset-=segmentSize
+            }
         }
         While,!File.AtEOF {
             hex:=""
@@ -211,7 +245,11 @@ class File
             extract := true, header:=true
         _last:=1
         FileEncoding, % this.encoding
-        FileRead, content, % this.path
+        try FileRead, content, % this.path
+        catch e {
+        unexpected:="Cant read-->""" this.path """, Ended with: " e.message
+        return
+        }
         as_lines ? tlen:=StrLen(content)
         while (_last>0) {
             len:=orig_len, len2:=orig_len2

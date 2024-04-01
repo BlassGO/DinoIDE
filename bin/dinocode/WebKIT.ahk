@@ -1,4 +1,88 @@
-﻿; JSON for AutoHotkey
+﻿;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; HttpQueryInfo Function ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Source: post by olfen "DllCall: HttpQueryInfo - Get HTTP headers"
+;                       http://www.autohotkey.com/forum/post-64567.html#64567
+;
+; For flag info, see: http://msdn.microsoft.com/en-us/library/aa385351(VS.85).aspx
+
+HttpQueryInfo(URL, QueryInfoFlag=21, Proxy="", ProxyBypass="") {
+hModule := DllCall("LoadLibrary", "str", dll := "wininet.dll")
+
+; Adapt for build by 0x150||ISO
+ver := ( A_IsUnicode && !RegExMatch( A_AhkVersion, "\d+\.\d+\.4" ) ? "W" : "A" )
+InternetOpen := dll "\InternetOpen" ver
+HttpQueryInfo := dll "\HttpQueryInfo" ver
+InternetOpenUrl := dll "\InternetOpenUrl" ver
+
+If (Proxy != "")
+AccessType=3
+Else
+AccessType=1
+
+io_hInternet := DllCall( InternetOpen
+, "str", "" 
+, "uint", AccessType
+, "str", Proxy
+, "str", ProxyBypass
+, "uint", 0) ;dwFlags
+If (ErrorLevel != 0 or io_hInternet = 0) {
+DllCall("FreeLibrary", "uint", hModule)
+return, -1
+}
+
+iou_hInternet := DllCall( InternetOpenUrl
+, "uint", io_hInternet
+, "str", url
+, "str", ""
+, "uint", 0
+, "uint", 0x80000000
+, "uint", 0)
+If (ErrorLevel != 0 or iou_hInternet = 0) {
+DllCall("FreeLibrary", "uint", hModule)
+return, -1
+}
+
+VarSetCapacity(buffer, 1024, 0)
+VarSetCapacity(buffer_len, 4, 0)
+
+Loop, 5
+{
+  hqi := DllCall( HttpQueryInfo
+  , "uint", iou_hInternet
+  , "uint", QueryInfoFlag
+  , "uint", &buffer
+  , "uint", &buffer_len
+  , "uint", 0)
+  If (hqi = 1) {
+    hqi=success
+    break
+  }
+}
+
+IfNotEqual, hqi, success, SetEnv, res, timeout
+
+If (hqi = "success") {
+p := &buffer
+Loop
+{
+  l := DllCall("lstrlen", "UInt", p)
+  VarSetCapacity(tmp_var, l+1, 0)
+  DllCall("lstrcpy", "Str", tmp_var, "UInt", p)
+  p += l + 1 
+  res := res . tmp_var
+  If (*p = 0)
+  Break
+}
+}
+
+DllCall("wininet\InternetCloseHandle",  "uint", iou_hInternet)
+DllCall("wininet\InternetCloseHandle",  "uint", io_hInternet)
+DllCall("FreeLibrary", "uint", hModule)
+
+return, res
+}
+
+;-------------------------------------------------------------------------
+; JSON for AutoHotkey
 ; Copyright (c) 2018-2022 Kurt McKee <contactme@kurtmckee.org>
 ; The code is licensed under the terms of the MIT license.
 ; https://github.com/kurtmckee/ahk_json
@@ -415,8 +499,7 @@ extract_value(blob, index_left)
     throw "UNRECOGNIZED_TEXT: Unrecognized character or value"
 }
 
-
-json_load(blob)
+LoadJSON(blob)
 {
     blob_length := strlen(blob)
     index_left := 0
@@ -453,4 +536,46 @@ BuildJson(obj)
         str .= (array ? "" : """" a """: ") . (IsObject(b) ? BuildJson(b) : IsNumber(b) ? b : """" b """") . ", "	
     str := RTrim(str, " ,")
     return (array ? "[" str "]" : "{" str "}")
+}
+
+;-------------------------------------------------------------------------
+; Extra by @BlassGO
+;-------------------------------------------------------------------------
+WebCode(url, ResolveTimeout:=0, ConnectTimeout:=60000, SendTimeout:=30000, ReceiveTimeout:=30000) {
+   return load_config(responseText(url,ResolveTimeout, ConnectTimeout, SendTimeout, ReceiveTimeout),,, FD_CURRENT)
+}
+XMLParser(str) {
+    try {
+    ComObjError(false),xml:=ComObjCreate("MSXML2.DOMDocument.6.0"), xml.async:=false
+    return xml.loadXML(str)?xml:(xml:="")
+    } catch e
+    xml:="",unexpected:="Error converting XML to an Object -> " e.message
+}
+ResponseText(url, ResolveTimeout:=0, ConnectTimeout:=60000, SendTimeout:=30000, ReceiveTimeout:=30000) {
+    ComObjError(false),httpRequest:=ComObjCreate("WinHttp.WinHttpRequest.5.1")
+    try {
+        httpRequest.SetTimeouts(ResolveTimeout, ConnectTimeout, SendTimeout, ReceiveTimeout)
+        httpRequest.Open("GET", url, false)
+        httpRequest.Send()
+        status:=httpRequest.status
+        if (status!=200)
+        unexpected:="Unable to read WEB content -> " (status ? "HTTP_Error[" status "]" : "No internet connection")
+        return httpRequest.ResponseText, httpRequest:=""
+    } catch e {
+        httpRequest:="", unexpected:="Error reading WEB content -> " e.message
+    }
+}
+ResponseXML(url, ResolveTimeout:=0, ConnectTimeout:=60000, SendTimeout:=30000, ReceiveTimeout:=30000) {
+    PlainXML:=responseText(url,ResolveTimeout, ConnectTimeout, SendTimeout, ReceiveTimeout)
+    return unexpected?"":XMLParser(PlainXML)
+}
+ResponseJSON(url, ResolveTimeout:=0, ConnectTimeout:=60000, SendTimeout:=30000, ReceiveTimeout:=30000) {
+    PlainJSON:=responseText(url,ResolveTimeout, ConnectTimeout, SendTimeout, ReceiveTimeout)
+    return unexpected?"":LoadJSON(PlainJSON)
+}
+UrlDownloadToFile(url,to) {
+    try UrlDownloadToFile, % url, % to
+    catch e
+    unexpected:="Could not download file -> " e.message
+    return (ErrorLevel=0)
 }
