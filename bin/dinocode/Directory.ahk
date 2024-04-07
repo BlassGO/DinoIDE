@@ -29,6 +29,10 @@ class Directory
         FileCreateDir, % this.path
         return (ErrorLevel=0)
     }
+    createsub(name) {
+        FileCreateDir, % this.path . "\" . name
+        return (ErrorLevel=0)
+    }
     exist() {
         return InStr(FileExist(this.path), "D")
     }

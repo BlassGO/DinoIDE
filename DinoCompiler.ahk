@@ -172,7 +172,7 @@ simplename(str, fullpath := true) {
       str := GetFullPathName(str)
       SplitPath, str,,,,Name,
    } else {
-      RegExMatch(str, "(.*[\\/])*\K(.*?)(?=(\.[^.]*)$)", Name)
+      RegExMatch(str, "(.*[\\/])*\K(.*?)(?=(\.[^.]*)$|$)", Name)
    }
    return Name
 }
@@ -180,140 +180,197 @@ isNumber(n) {
 	if n is Number
 	   return true
 }
+EnclosingWithQuotes(ByRef s, p, b="(", e=")", len:=0) {
+    static $Quote=Chr(34)
+    bc:=1, len:=(len)?len:StrLen(s), p+=1
+    while,(bc&&p<=len)
+    {
+        (SubStr(s,p,1)=b)?(bc+=1,p+=1):(((_chr:=SubStr(s,p,1))=e)?(bc-=1,p+=1):((bc>=1)?((_chr=$Quote)?(p:=InStr(s,$Quote,false,p+1),p:=p?p+1:0):p+=1):p+=1))
+        if p=0
+          return 0
+    }
+    return (bc=0)?p:0
+}
+GetNextToken(ByRef s, Byref p, len:=0, Byref _chr:="", Byref _lastchr:="", Byref stop:=false, delimiter:=";")
+{
+    static $Quote=Chr(34), Deref:=Chr(4)
+	p:=(p)?p:1, len:=(len)?len:StrLen(s), _chr:="", _lastchr:="", stop:=""
+	while,(p>0&&p<=len)
+	{
+		_char:=SubStr(s, p, 1)
+		if (_char=A_Space||_char=A_Tab) {
+           if word
+              break
+           else
+              p++
+		} else if _char=(
+            _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,,,len)
+		else if _char=[
+            _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,"[","]",len)
+		else if word&&(_char=".")
+			_chr:="%", _lastchr:=_char, p+=1
+		else if (_char=delimiter||_char="#") {
+            stop:=_char
+			break
+        } else if !word {
+            if (_char=$Quote)
+                _chr:=_char, at:=p, p:=InStr(s,$Quote,false,p+1),p:=p?p+1:0
+            else if (_char=Deref)
+                _chr:=SubStr(s,p+1,1), word:=p, p+=1
+            else
+                word:=p, p+=1
+            if (p=0)
+               at:=0, p:=-1
+        } else 
+          p++
+		if at
+			break
+	}
+    return,(word)?SubStr(s,word,p-word):(at?SubStr(s,at,p-at):"")
+}
 solve_escape(ByRef str, ByRef from:="", key:="&") {
 	static Deref:=Chr(4)
-    resolved:=""
-    Loop, Parse, str, % Deref
-		resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1)))?(((_chr:=SubStr(A_LoopField,1,1))&&_chr=key)?from[_index]:Deref . A_LoopField . Deref):A_LoopField
-    return str:=resolved
+   resolved:="",resolved_end:=0
+   Loop, Parse, str, % Deref
+	resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1)))?(((_chr:=SubStr(A_LoopField,1,1))&&_chr=key)?from[_index]:Deref . A_LoopField . Deref):A_LoopField, resolved_end:=A_Index
+   return,(resolved_end>1)?str:=resolved:str
 }
 trim_all(str){
    return RegexReplace(str,"s)^\s*(.*?)\s*$","$1")
 }
+GetIndent(ByRef s, Byref p:=1) {
+    p:=p?p:1, indent:=0
+	while,((_char:=SubStr(s,p,1))!="")&&(_char=A_Space||_char=A_Tab)
+	p+=1, indent+=(_char=A_Tab)?4:1
+	return indent
+}
 with_indent(str){
-   return RegexMatch(str,"s)^(\s*)(.*?)\s*$",line_indent) ? StrLen(line_indent1) . Chr(1) . line_indent2  : ""
+   static IndentChar:=Chr(1), AnyS:=A_Space . A_Tab . "`r`n"
+   return IndentChar . GetIndent(str,_pos) . IndentChar . RTrim(SubStr(str,_pos),AnyS)
 }
-with_expr(str){
-   static regex_expr
-   (!regex_expr) ? regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)"
-   _pos:=1, _extra:=0
-   while,(_pos:=RegExMatch(str,regex_expr,_char,_pos+_extra))
-       _char1:=with_indent(with_expr(_char1)), str:=RegExReplace(str,".{" . StrLen(_char)-3 . "}",StrReplace(_char1,"$","$$"),,1,_pos+2), _extra:=StrLen(_char1)+3
-   return str
+NextChar(ByRef s:="", chr:="", p:=0) {
+   Loop
+	p:=InStr(s,chr,false,p+1)
+	Until,(p=0)||!(SubStr(s,p+1,1)=chr&&(p+=1))
+	return p
 }
-read_file(file) {
-   static regex_expr, regex_main
-   (!regex_expr) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)",regex_main:="((?:[^;\s(\[]+([\(\[](?:[^\[\]()\" . Delimiter . "]*|(?:[,\s]*\" . Delimiter . "[\s\S]*?\" . Delimiter . "[,\s]*)*|(?2))*[\)\]])*)+|(?:[\(\[](?:[^\[\]()\" . Delimiter . "]*|(?:[,\s]*\" . Delimiter . "[\s\S]*?\" . Delimiter . "[,\s]*)*|(?2))*[\)\]])+|;\s*[^;\s]+)\s*((?:\" . Delimiter . "[\s\S]*?\" . Delimiter . "\s*)*)")
+EnclosingExpr(ByRef s, p, b="$(", e=")", len:=0) {
+    static $Quote=Chr(34)
+    bc:=1, len:=(len)?len:StrLen(s), p+=2
+    while,(bc&&p<=len)
+    {
+        (SubStr(s,p,2)=b)?(bc+=1,p+=2):(((_chr:=SubStr(s,p,1))=e)?(bc-=1,p+=1):((bc>=1)?((_chr=$Quote)?(p:=NextChar(s,$Quote,p),p:=p?p+1:0):((_chr="(")?(bc+=1,p+=1):p+=1)):p+=1))
+        if p=0
+          return 0
+    }
+    return (bc=0)?p:0
+}
+EscapeExpr(Byref read_line, Byref _result, len:=0, Byref _hasexpr:=0, Byref _maxexpr:=0) {
+	static Deref:=Chr(4), $Expr:="$", $ExprP:="$(", $ExprChr:="``"
+    _pos:=1, _extra:=0, _last:=1, resolvedstr:="", read_line_len:=len?len:StrLen(read_line)
+    while,(_pos:=InStr(read_line,$ExprP,false,_pos+_extra))
+    {
+		if (SubStr(read_line,_pos-1,1)="$")
+		resolvedstr.=SubStr(read_line, _last, _pos-_last) . $Expr, _end:=_pos+1
+		else if (_end:=EnclosingExpr(read_line,_pos,,,read_line_len))
+		_result.Push(SubStr(read_line,_pos,_end-_pos)), _maxexpr:=_result.MaxIndex(), resolvedstr.=SubStr(read_line, _last, _pos-_last) . Deref . $ExprChr . _maxexpr . $ExprChr . Deref, (A_Index=1)?_hasexpr:=_maxexpr:false
+		else {
+         abort("Expression -> '$(' without closing -> ')'")
+			break
+		}
+		_extra:=_end-_pos, _last:=_end
+    }
+    return,unexpected?"":((_last>1)?resolvedstr . SubStr(read_line, _last) : read_line)
+}
+EscapeStr(Byref read_line, Byref Escape, Byref _escape) {
+    static Deref:=Chr(4), $Quote=Chr(34), $Quotes=Chr(34) . Chr(34)
+    _pos:=1, _extra:=0, _last:=0, resolvedstr:=""
+    while,(_pos:=InStr(read_line,$Quote,false,_pos+_extra))
+    {
+        _end:=_pos, is_quoted:=0
+        Loop
+        _end:=InStr(read_line,$Quote,false,_end+1)
+		  Until,(_end=0)||!(SubStr(read_line,_end+1,1)=$Quote&&(is_quoted:=_end+=1))
+        if (_end=0) {
+            abort("A closure was expected--->""")
+            break
+        } else {
+			((_end-_pos)-1=0) ? (resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . $Quotes):(_escape.Push(SubStr(read_line,_pos+1,(_end-_pos)-1)), resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . $Quote . Deref . "&" . _escape.MaxIndex() . "&" . Deref . $Quote)
+			_extra:=(_end-_pos)+1, _last:=_end
+        }
+    }
+    return,unexpected?"":((_last)?resolvedstr . SubStr(read_line, _last+1) : read_line)
+}
+read_config(file) {
+   static IndentChar:=Chr(1), AnyS:=A_Space . A_Tab . "`r`n"
    InStr(FileExist(file), "A") ? dir:=dirname(file) : abort("Cant find config-->" file)
    if error
-      return 0
+   return 0
    FileEncoding, UTF-8
 	if (file:=FileOpen(file, "r `n")) {
 		while (!file.AtEOF())
 		{
-         tag:=false, line:=StrReplace(file.ReadLine(),A_Tab,"    ")
-         RegexMatch(line,"P)^\s+",line_indent)?(try:=RTrim(SubStr(line,line_indent+1),"`n`r" . A_Space . "`t"),line_indent:=StrLen(SubStr(line,1,line_indent))):(try:=RTrim(line,"`n`r" . A_Space . "`t"))
+         tag:=false, _pos:=0, read_line:=file.ReadLine(),line_indent:=GetIndent(read_line,_pos), read_line:=RTrim(SubStr(read_line,_pos),"`r`n")
          (txt!=""&&line_indent<=txt) ? txt:=""
          if !txt {
-            if (SubStr(try,1,1)=":") {
+            read_line:=RTrim(read_line,AnyS)
+            if (SubStr(read_line,1,1)=":") {
                tag:=true
-            } else if (SubStr(try,1,1)=">") {
-               txt:=line_indent, try:=StrReplace(try, A_Space)
-            } else if (try="") {
+            } else if (SubStr(read_line,1,1)=">") {
+               txt:=line_indent ;, read_line:=StrReplace(read_line, A_Space)
+            } else if (read_line="") {
                continue
             } else if multi_note {
-               (SubStr(try,-1)="*#") ? multi_note:=false
+               (SubStr(read_line,-1)="*#") ? multi_note:=false
                continue
-            } else if (SubStr(try,1,1)="#") {
-               if (SubStr(try,2,1)="*") {
+            } else if (SubStr(read_line,1,1)="#") {
+               if (SubStr(read_line,2,1)="*") {
                   multi_note:=true
-               } else if RegExMatch(try,"^#include\s+\K\S.*$",include){
-                  include:=Trim(include)
-                  InStr(FileExist(dir "\" include), "A") ? include:=GetFullPathName(dir "\" include) : InStr(FileExist(include), "A") ? include:=GetFullPathName(include) : include:=""
-                  include ? (extralibs ? extralibs.="`n" : false, extralibs.="#include " include) : false
+               } else if RegExMatch(read_line,"^#include\s+\K\S.*$",include){
+                  include:=InStr(FileExist(dir "\" include), "A") ? GetFullPathName(dir "\" include) : (InStr(FileExist(include), "A") ? GetFullPathName(include) : "")
+                  include ? (extralibs.=((extralibs="")?"":"`n") . "#include " . include) : false
                }
                continue
             }
          }
          action:=""
 		   if tag {
-            line:=StrReplace(try, A_Space) . "`r`n"
+            read_line:=StrReplace(StrReplace(read_line, A_Space),A_Tab) . "`r`n"
          } else if txt {
-            line:=line_indent . Chr(1) . try . "`r`n"
+            read_line:=IndentChar . line_indent . IndentChar . read_line . "`r`n"
          } else {
             ; This analysis is superficial focused on the simplification of the indentation and obtaining simple parameters.
-            _pos:=1, _extra:=0, _escape:=[], _result:=[], _stringtmp:=[]
-            while,(_pos:=InStr(line,Escape,,_pos+_extra)) {
-               if (_end:=Substr(line,_pos+1,1)) {
-                     _escape.Push(Escape _end), _max:=_escape.MaxIndex()
-                     _max:=Deref . "&" . _max . "&" . Deref,line:=RegExReplace(line,".{2}",_max,,1,_pos), _extra:=StrLen(_max)
-               } else {
-                  break
-               }
-            }
-            _pos:=1, _extra:=0
-            while,(_pos:=RegExMatch(line,regex_expr,_char,_pos+_extra))
-               _char1:=with_indent(with_expr(_char1)), _result.Push(solve_escape(_char1, _escape)), _max:=Deref . "``" . _result.MaxIndex() . "``" . Deref, line:=RegExReplace(line,".{" . StrLen(_char)-3 . "}",_max,,1,_pos+2), _extra:=StrLen(_max)+3
-            _pos:=1, _extra:=0
-            while,(_pos:=InStr(line,"""",,_pos+_extra))
+            _escape:=[], _result:=[]
+            read_line:=EscapeExpr(read_line,_result), read_line:=EscapeStr(read_line, Escape, _escape)
+            if error
+            break
+            (_pos:=InStr(read_line,"#"))?read_line:=Substr(read_line,1,_pos-1):false, read_line_opt:=""
+            Loop, Parse, read_line, `;
             {
-               if (_end:=InStr(line,"""",,_pos+1)) {
-                  _string:=Substr(line,_pos+1,(_end-_pos)-1)
-                  if (_string!="") {
-                     (InStr(_string, Deref)) ? solve_escape(_string, _escape)
-                     _stringtmp.Push(_string), _string:="", _string_rpl:="""" . Deref . "&" . _stringtmp.MaxIndex() . "&" . Deref . """"
-                     line:=RegExReplace(line,".{" . (_end-_pos)+1 . "}",_string_rpl,,1,_pos), _extra:=StrLen(_string_rpl)
-                  } else {
-                     _extra:=2
-                  }
-               } else {
-                  abort("Reason: A closure was expected--->""`n`n---> " try)
-                  break 2
-               }
-            }
-            _escape:=_stringtmp, _stringtmp:=""
-            (_pos:=InStr(line,"#")) ? line:=Substr(line,1,_pos-1)
-            _line:=StrSplit(line,";"), line:=""
-            for count, eachline in _line {
-                  _pos:=1,_extra:=0,main_action:={},action:="",eachline:=with_indent(eachline)
-                  while (_pos:=RegExMatch(eachline,regex_main,_char,_pos+_extra))
-                  {
-                     _extra:=Strlen(_char)
-                     if (_pos=1) {
-                        action:=(_at:=InStr(_char1,Chr(1))) ? SubStr(_char1,_at+1) : _char1
-                     } else {
-                        main_action.Push(solve_escape(solve_escape(_char1, _escape), _result, "``"))
-                     }
-                     parameter:=StrSplit(_char2,Delimiter)
-                     parameter[1] ? ARGS_N:=1 : ARGS_N:=0
-                     parameter_end:=parameter.MaxIndex()
-                     parameter[parameter_end] ? parameter_end:=false
-                     for count, value in parameter {
-                        (Mod(ARGS_N, 2)&&count!=parameter_end) ? main_action.Push(solve_escape(solve_escape(value, _escape), _result, "``"))
-                        ARGS_N++
-                     }
-                     parameter:=""
-                  } 
+                  if A_LoopField=
+                  continue
+                  _pos:=1,read_line_len:=StrLen(A_LoopField),main_action:=[],action:=""
+                  while,(_token:=GetNextToken(A_LoopField,_pos,read_line_len,_chrfound,_lastchr,_stop))!=""
+                  _isstr:=(_chrfound=Delimiter),(A_Index=1)?(action:=_token):main_action.Push(solve_escape(solve_escape(_isstr?_escape[SubStr(_token, 4, -3)]:_token, _escape), _result, "``"))
                   switch (action)
                   {
                      case "import", "importar":
                         for count, value in main_action
-                           content:=read_file(InStr(FileExist(dir "\" value), "A") ? dir "\" value : value) . "`r`n" . content
+                           content:=read_config(InStr(FileExist(dir "\" value), "A") ? dir "\" value : value) . content
                         continue
                      case "escape":
                         if (StrLen(main_action.1)=1) {
                            Escape:=main_action.1
                         } else {
-                           abort("Reason: Invalid escape character--->" main_action.1 "`n`n---> " try)
+                           abort("Reason: Invalid escape character--->" main_action.1 "`n`n---> " read_line)
                            break 2
                         }
                   }
-                  main_action:=""
-                  line.=solve_escape(solve_escape(eachline, _escape), _result, "``") . "`r`n"
+                  main_action:="", read_line_opt.=((A_Index>1)?";":"") . solve_escape(solve_escape((A_Index=1)?IndentChar . line_indent . IndentChar . A_LoopField:Trim(A_LoopField,AnyS), _escape), _result, "``")
             }
-            _line:=""
+            read_line:=(read_line_opt="")?"":read_line_opt . "`r`n", read_line_opt:=""
          }
-         content.=line
+         content.=read_line
 		}
 		file.Close()
 	}
@@ -330,10 +387,8 @@ build() {
    admin ? extraprops:=";@Ahk2Exe-UpdateManifest 1"
    for name, props in Libraries()
    {
-      if props.include {
-         libs ? libs.="`n"
-         libs.="#include " . props.path
-      }
+      if props.include
+      libs.=(libs=""?"":"`n") . "#include " . props.path
    }
    FileDelete, % tmp
    FileDelete, % out
@@ -362,7 +417,7 @@ SetBatchLines, -1
 config_tracking:=%config_tracking%
 
 ), % tmp
-   _total:=StrLen(_encoded:=Crypt.Encrypt.StrEncrypt(read_file(config),"petecito",CryptAlg:=1,HashAlg:=1))+1
+   _total:=StrLen(_encoded:=Crypt.Encrypt.StrEncrypt(read_config(config),"petecito",CryptAlg:=1,HashAlg:=1))+1
    _pos:=1
    Loop {
       _pos+=StrLen(_part:=SubStr(_encoded,_pos,12000))

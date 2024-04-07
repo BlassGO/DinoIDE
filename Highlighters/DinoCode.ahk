@@ -188,7 +188,7 @@ HighlightDino(Settings:="", ByRef Code:="", Bare:=False, reset:=false, add:="")
 			ODims)
 			((?:^|[ \t]*)\K#[^\n]+)          ; Comments
 			|(^:[^\n]+)                      ; TAGs
-			|(^[ \t]*\>\s*\w+\s*(?:\n|$))    ; Literal Redirection
+			|(^[ \t]*\>[^\n]+(?:\n|$))    	 ; Literal Redirection
 			|([+*!~&\/\\<>^|=?:
 				```%{}\[\]\-]+)              ; Punctuation
 			|\b(0x[0-9a-fA-F]+|[0-9]+)       ; Numbers
@@ -217,11 +217,15 @@ HighlightDino(Settings:="", ByRef Code:="", Bare:=False, reset:=false, add:="")
 		} else if (Match.Value(2) != "")
 		    FormatDinoTAG(Match.Value(2), RTF, Settings, Map), already:=true
 		else if (Match.Value(3) != "") {
-			RegExMatch(Match[3], "ODims)^([ \t]*)\>\s*(?=(.*))", Cont)
-			indent:=StrLen(StrReplace(Cont.Value(1), A_Tab, "    "))
-			RTF .= "\cf" . Map.Punctuation . " " . EscapeRTF(Cont.Value())
-			RTF .= "\cf" . Map.Variables . " " . EscapeRTF(Cont.Value(2))
-			already:=true
+			if RegExMatch(Match[3], "ODims)^([ \t]*)\>\s*(?=(\S+)(.*))", Cont) {
+				indent:=StrLen(StrReplace(Cont.Value(1), A_Tab, "    "))
+				RTF .= "\cf" . Map.Punctuation . " " . EscapeRTF(Cont.Value())
+				RTF .= "\cf" . Map.Variables . " " . EscapeRTF(Cont.Value(2))
+				(Cont.Value(3)!="")?FormatDinoStr(Cont.Value(3), RTF, Settings, Map, true)
+				already:=true
+			} else {
+				RTF .= "\cf" Map.Plain
+			}
 		} else if (Match.Value(4) != "")
 			RTF .= "\cf" Map.Punctuation
 		else if (Match.Value(5) != "")

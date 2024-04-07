@@ -3,7 +3,7 @@
 
 class File
 {
-    __New(file:="",encoding:="UTF-8-RAW",linebreak:="`n")
+    __New(file:="",encoding:="UTF-8-RAW",linebreak:="")
     {
         (file!="")?this.path:=file
         (encoding!="")?this.encoding:=encoding
@@ -20,6 +20,21 @@ class File
             else
                 unexpected:="Invalid encoding -> " . value
             return this._encoding
+        }
+    }
+    linebreak[] {
+        get {
+            static File
+            if (this._linebreak="") {
+                File:=FileOpen(this.path, "r")
+                this._linebreak:=InStr(File.ReadLine(),"`r`n") ? "`r`n" : "`n"
+                File.Close(), File:=""
+            }
+            return this._linebreak
+        }
+        set {
+            (value!="")?this._linebreak:=value
+            return this._linebreak
         }
     }
     path[] {
@@ -59,16 +74,18 @@ class File
     }
     lines[i:=1,j:=1] {
         get {
-            _temp:=""
-            Loop, read, % this.path
-            {
-                if (A_Index>=i&&A_Index<=j)
-                    (_temp)?(_temp.=this.linebreak):false,_temp.=A_LoopReadLine
-                else if (A_Index>j)
-                    break
-            }
-            return _temp
+            static File
+            File:=FileOpen(this.path, "r"), count:=1, _temp:=""
+            while,!File.AtEOF&&(count<i)
+            File.ReadLine(),count+=1
+            while,!File.AtEOF&&(count<=j)
+            _temp.=File.ReadLine(),count+=1 
+            File.Close(), File:=""
+            return RTrim(_temp,"`r`n")
         }
+    }
+    LineStr(P, C:="", D:="") {
+        return LineStr(this.content,P,C,D)
     }
     create() {
         (!this.exist()) ? this.content:=""
@@ -78,13 +95,12 @@ class File
         return (FileExist(this.path)~="[^D]") 
     }
     count() {
-       _total:=0
-       if (_temp:=this.content) {
-            _total+=1, _pos:=0
-            while,(_pos:=InStr(_temp,"`n",,_pos+1))
-                _total++
-       }
-        return _total
+        static File
+        File:=FileOpen(this.path, "r"),count:=0
+        while,!File.AtEOF
+        File.ReadLine(),count+=1
+        File.Close(), File:=""
+        return count
     }
     delete() {
         try FileDelete, % this.path
@@ -93,7 +109,7 @@ class File
     deleteany() {
         try FileDelete, % this.path
         catch
-           try FileRemoveDir, % this.path, 1
+        try FileRemoveDir, % this.path, 1
         return (ErrorLevel=0)
     }
     write(str) {
@@ -232,7 +248,7 @@ class File
         return n
     }
     find(str,str2:="",options:="") {
-        orig_len:=StrLen(str), orig_len2:=StrLen(str2)
+        orig_len:=StrLen(str), orig_len2:=StrLen(str2), case_sense:=false
         if (options ~= "i)\ball\b")
             all := true
         if (options ~= "i)\binfo\b")
@@ -243,6 +259,8 @@ class File
             extract := true, header:=false
         if (options ~= "i)\bcomplete_extract\b")
             extract := true, header:=true
+        if (options ~= "i)\bcase_sense\b")
+            case_sense := true
         _last:=1
         FileEncoding, % this.encoding
         try FileRead, content, % this.path
@@ -253,16 +271,16 @@ class File
         as_lines ? tlen:=StrLen(content)
         while (_last>0) {
             len:=orig_len, len2:=orig_len2
-            if (_at:=InStr(content,str,,_last)) {
+            if (_at:=InStr(content,str,case_sense,_last)) {
                 if as_lines {
-                    (_startline:=InStr(content,"`n",,_at-tlen)) ? (len+=(_at-_startline)-1, _at:=_startline+1) : (_at:=1, len:=0)
-                    (_endline:=InStr(content, "`n",, _at+len)) ? (len+=_endline-(_at+len)) : (len+=tlen-len)
+                    (_startline:=InStr(content,"`n",false,_at-tlen)) ? (len+=(_at-_startline)-1, _at:=_startline+1) : (_at:=1, len:=0)
+                    (_endline:=InStr(content, "`n",false, _at+len)) ? (len+=_endline-(_at+len)-(SubStr(content,_endline-1,1)="`r")) : (len+=tlen-len)
                 }
-                if str2 {
-                    if (_at2:=InStr(content,str2,,_at+len)) {
+                if (str2!="") {
+                    if (_at2:=InStr(content,str2,case_sense,_at+len)) {
                         if as_lines {
-                            (_startline:=InStr(content,"`n",,_at2-tlen)) ? (len2+=(_at2-_startline)-1, _at2:=_startline+1) : (_at2:=1, len2:=0)
-                            (_endline:=InStr(content, "`n",, _at2+len2)) ? (len2+=_endline-(_at2+len2)) : (len2+=tlen-len2)
+                            (_startline:=InStr(content,"`n",false,_at2-tlen)) ? (len2+=(_at2-_startline)-1, _at2:=_startline+1) : (_at2:=1, len2:=0)
+                            (_endline:=InStr(content, "`n",false, _at2+len2)) ? (len2+=_endline-(_at2+len2)-(SubStr(content,_endline-1,1)="`r")) : (len2+=tlen-len2)
                         }
                         (extract) ? _last:=_at2+len2 : _last:=0
                         if info {
@@ -280,7 +298,7 @@ class File
                     }
                 } else {
                     if extract {
-                        (!as_lines) ? ((_endline:=InStr(content, "`n",, _at+len)) ? (len+=_endline-(_at+len)) : (len+=(tlen?tlen:(tlen:=StrLen(content)))-len)) : false
+                        (!as_lines) ? ((_endline:=InStr(content, "`n",false, _at+len)) ? (len+=_endline-(_at+len)-(SubStr(content,_endline-1,1)="`r")) : (len+=(tlen?tlen:(tlen:=StrLen(content)))-len)) : false
                         _last:=_at+len
                     } else {
                         _last:=0

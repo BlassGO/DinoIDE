@@ -493,13 +493,13 @@ smali_kit(options*) {
 }
 find_str(path,str,str2:="",options:="") {
    ; By @BlassGO
-   orig_len:=StrLen(str), orig_len2:=StrLen(str2), mode:="F"
-   RegexMatch(options, "i)encoding:\s*(.*)(?=\w+:|$)", opt) ? options:=StrReplace(options, opt)
-   enc:=opt1 ? Trim(opt1) : "UTF-8"
-   if RegexMatch(options, "i)name:\s*(.*)(?=\w+:|$)", opt)
-      options:=StrReplace(options, opt), name:=opt1 ? Trim(opt1) : "", literal_name:=false
-   else if RegexMatch(options, "i)static-name:\s*(.*)(?=\w+:|$)", opt) 
-      options:=StrReplace(options, opt), name:=opt1 ? Trim(opt1) : "", literal_name:=true
+   orig_len:=StrLen(str), orig_len2:=StrLen(str2), mode:="F", case_sense:=false
+   RegexMatch(options, "i)encoding:\s*(CP\d+|UTF-8|UTF-8-RAW|UTF-16|UTF-16-RAW)", opt) ? options:=StrReplace(options, opt)
+   enc:=opt1 ? opt1 : "UTF-8"
+   if RegexMatch(options, "i)name:\s*(.*)", opt)
+      options:=StrReplace(options, opt), name:=(opt1!="") ? opt1 : "", literal_name:=false
+   else if RegexMatch(options, "i)static-name:\s*(.*)", opt) 
+      options:=StrReplace(options, opt), name:=(opt1!="") ? opt1 : "", literal_name:=true
    FileEncoding, % enc
    if (options ~= "i)\bpattern\b")
 		pattern := true
@@ -515,6 +515,8 @@ find_str(path,str,str2:="",options:="") {
 		extract := true, header:=false
    if (options ~= "i)\bcomplete_extract\b")
 		extract := true, header:=true
+   if (options ~= "i)\bcase_sense\b")
+      case_sense := true
    (!pattern&&InStr(FileExist(path), "D")) ? (path .= SubStr(path,0)="\" ? "*.*" : "\*.*"):false
    Loop, Files, %path%, %mode%
    {  
@@ -525,16 +527,16 @@ find_str(path,str,str2:="",options:="") {
       as_lines ? tlen:=StrLen(content)
       while (_last>0) {
          len:=orig_len, len2:=orig_len2
-         if (_at:=InStr(content,str,,_last)) {
+         if (_at:=InStr(content,str,case_sense,_last)) {
             if as_lines {
-               (_startline:=InStr(content,"`n",,_at-tlen)) ? (len+=(_at-_startline)-1, _at:=_startline+1) : (_at:=1, len:=0)
-               (_endline:=InStr(content, "`n",, _at+len)) ? (len+=_endline-(_at+len)) : (len+=tlen-len)
+               (_startline:=InStr(content,"`n",false,_at-tlen)) ? (len+=(_at-_startline)-1, _at:=_startline+1) : (_at:=1, len:=0)
+               (_endline:=InStr(content, "`n",false, _at+len)) ? (len+=_endline-(_at+len)-(SubStr(content,_endline-1,1)="`r")) : (len+=tlen-len)
             }
-            if str2 {
-               if (_at2:=InStr(content,str2,,_at+len)) {
+            if (str2!="") {
+               if (_at2:=InStr(content,str2,case_sense,_at+len)) {
                   if as_lines {
-                     (_startline:=InStr(content,"`n",,_at2-tlen)) ? (len2+=(_at2-_startline)-1, _at2:=_startline+1) : (_at2:=1, len2:=0)
-                     (_endline:=InStr(content, "`n",, _at2+len2)) ? (len2+=_endline-(_at2+len2)) : (len2+=tlen-len2)
+                     (_startline:=InStr(content,"`n",false,_at2-tlen)) ? (len2+=(_at2-_startline)-1, _at2:=_startline+1) : (_at2:=1, len2:=0)
+                     (_endline:=InStr(content, "`n",false, _at2+len2)) ? (len2+=_endline-(_at2+len2)-(SubStr(content,_endline-1,1)="`r")) : (len2+=tlen-len2)
                   }
                   (extract) ? _last:=_at2+len2 : _last:=0
                   if info {
@@ -552,7 +554,7 @@ find_str(path,str,str2:="",options:="") {
                }
             } else {
                if extract {
-                  (!as_lines) ? ((_endline:=InStr(content, "`n",, _at+len)) ? (len+=_endline-(_at+len)) : (len+=(tlen?tlen:(tlen:=StrLen(content)))-len)) : false
+                  (!as_lines) ? ((_endline:=InStr(content, "`n",, _at+len)) ? (len+=_endline-(_at+len)-(SubStr(content,_endline-1,1)="`r")) : (len+=(tlen?tlen:(tlen:=StrLen(content)))-len)) : false
                   _last:=_at+len
                } else {
                   _last:=0

@@ -24,7 +24,7 @@ SetWorkingDir, %A_ScriptDir%
 ;@Ahk2Exe-AddResource icon.ico, 208
 
 ; Working
-ide_version=v1.1.0
+ide_version=v1.2.0
 ini := current "\config.ini" 
 IniRead, icon, %ini%, COMPILER, icon, 0
 (!FileExist(icon)) ? icon:=current "\icon.ico"
@@ -113,6 +113,7 @@ Menu, File, Add, &Exit, Close
 Menu, Search, Add, &Find-Replace, Find
 Menu, Build, Add, Just RUN, RUN
 Menu, Build, Add, Just RUN (Step by Step), RUN
+Menu, Build, Add, Just Optimize Code, Optimize
 Menu, Build, Add, Convert to .EXE, Compile
 Menu, Build, Add, Convert to .EXE and RUN, Compile
 Menu, Build, Add, Change properties, with_gui
@@ -255,6 +256,19 @@ RUN:
 	config_tracking:=false
 return
 
+Optimize:
+	if !RC.FileClose(true)
+		return
+	error:=false, out:=dirname(config) "\" simplename(config) "-Optimized.config"
+	FileDelete, % out
+	FileAppend, % read_config(config), % out
+	if error {
+		FileDelete, % out
+	} else {
+		Run, explorer.exe /select`,"%out%"
+	}
+return
+
 Compile:
 	to_exe:=true
 	if !RC.FileClose(true)
@@ -307,11 +321,8 @@ FileInsert:
 Return
 ; ----------------------------------------------------------------------------------------------------------------------
 FileOpenDir:
-	if RC.Open_File
-	{
-		SplitPath, % RC.Open_File,, Open_Dir
-		Run, explorer.exe "%Open_Dir%"
-	}
+	if config
+		Run, explorer.exe /select`,"%config%"
 return
 ; ----------------------------------------------------------------------------------------------------------------------
 FileClose:

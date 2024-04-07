@@ -192,16 +192,11 @@ EnclosingWithQuotes(ByRef s, p, b="(", e=")", len:=0) {
     }
     return (bc=0)?p:0
 }
-NextChar(ByRef s:="", chr:="", p:=0, EscChar:="") {
-    static Escape:="\"
-	if (EscChar!="") {
-	   Escape:=EscChar
-	   return
-	}
+NextChar(ByRef s:="", chr:="", p:=0) {
     Loop
-		p+=1, next:=InStr(s,chr,false,p)
-	Until (next=0)||(SubStr(s,next-1,1)!=Escape)
-	return next
+	p:=InStr(s,chr,false,p+1)
+	Until,(p=0)||!(SubStr(s,p+1,1)=chr&&(p+=1))
+	return p
 }
 isObjRef(ByRef s,p:=1, len:=0) {
     static $Quote=Chr(34)
@@ -232,6 +227,12 @@ WhileWord(ByRef s, p:=1, len:=0) {
 	while,(p<=len&&((_char:=SubStr(s,p,1))!=A_Space&&_char!=A_Tab))
 		p+=1, word:=true
 	return (word)?p-1:0
+}
+GetIndent(ByRef s, Byref p:=1) {
+    p:=p?p:1, indent:=0
+	while,((_char:=SubStr(s,p,1))!="")&&(_char=A_Space||_char=A_Tab)
+		p+=1, indent+=(_char=A_Tab)?4:1
+	return indent
 }
 WhileWordBack(ByRef s, p:="", len:=0) {
     p:=(p="")?0:p, len:=len?len:StrLen(s)
