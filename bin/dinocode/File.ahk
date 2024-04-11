@@ -3,11 +3,19 @@
 
 class File
 {
-    __New(file:="",encoding:="UTF-8-RAW",linebreak:="")
+    __New(file:="",encoding:="UTF-8-RAW",linebreak:="", EOLTranslation:=false)
     {
         (file!="")?this.path:=file
         (encoding!="")?this.encoding:=encoding
-        this.linebreak:=linebreak
+        this.linebreak:=linebreak, this.EOLTranslation:=EOLTranslation
+    }
+    EOLTranslation[] {
+        get {
+            return this._eol
+        }
+        set {
+            return this._eol:=value?"":"*"
+        }
     }
     encoding[] {
         get {
@@ -60,7 +68,7 @@ class File
         set {
             this.Delete()
             FileEncoding, % this.encoding
-            try FileAppend, % value, % this.path
+            try FileAppend, % value, % this._eol . this.path
             catch e
             unexpected:="Cant write in-->""" this.path """, Ended with: " e.message
         }
@@ -114,14 +122,14 @@ class File
     }
     write(str) {
         FileEncoding, % this.encoding
-        try FileAppend, % str, % this.path
+        try FileAppend, % str, % this._eol . this.path
         catch e
         unexpected:="Cant write in: """ this.path """, Ended with: " e.message
         return (ErrorLevel=0)
     }
     writeline(str:="") {
         FileEncoding, % this.encoding
-        try FileAppend, % str . this.linebreak, % this.path
+        try FileAppend, % str . this.linebreak, % this._eol . this.path
         catch e
         unexpected:="Cant write in: """ this.path """, Ended with: " e.message
         return (ErrorLevel=0)

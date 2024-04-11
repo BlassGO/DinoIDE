@@ -57,7 +57,7 @@ class RichCode
 		}
 		
 		set {
-			FormatDinoStr(,,,,,{Escape: "\"})
+			FormatDinoStr(,,,,,{Escape: Chr(96)})
 			HighlightDino(,,,true)
 			this.Modified:=false
 			this.Highlight(Value)

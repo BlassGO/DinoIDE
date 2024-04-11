@@ -24,7 +24,7 @@ SetWorkingDir, %A_ScriptDir%
 ;@Ahk2Exe-AddResource icon.ico, 208
 
 ; Working
-ide_version=v1.2.0
+ide_version=v1.2.0-b
 ini := current "\config.ini" 
 IniRead, icon, %ini%, COMPILER, icon, 0
 (!FileExist(icon)) ? icon:=current "\icon.ico"

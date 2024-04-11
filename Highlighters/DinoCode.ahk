@@ -1,7 +1,7 @@
 ﻿#Include %A_LineFile%\..\Util.ahk
 
 FormatDinoStr(str:="", Byref RTF:="", Byref Settings:="", Byref Map:="", is_block:=false, update:="") {
-	static Delimiter:=Chr(34),Escape:="\",Deref:=Chr(4), Languages := {"DinoCode": Func("HighlightDino")}
+	static Delimiter:=Chr(34),Escape:=Chr(96),Deref:=Chr(4), Languages := {"DinoCode": Func("HighlightDino")}
 	, regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)"
 	if isObject(update) {
 		for var, val in update
@@ -152,7 +152,7 @@ HighlightDino(Settings:="", ByRef Code:="", Bare:=False, reset:=false, add:="")
 	static Flow := "if|else|for|until|while|use|global|section|sleep|set|exit|si|sino|mientras|hasta|usar|para|seccion|dormir|salir"
 	, Connectors := "in|with|to|unto|en|hacia|con"
 	, Builtins := "clipboard|comspec|errorlevel|false|true|falso|verdadero|programfiles"
-	, Signals := "break|return|continue|romper|retornar|continuar|escape"
+	, Signals := "break|return|continue|romper|retornar|continuar|escape|linebreak|saltodelinea"
 	, Opers := "not|and|or"
 	, Needle := "
 	( LTrim Join Comments
@@ -244,7 +244,7 @@ HighlightDino(Settings:="", ByRef Code:="", Bare:=False, reset:=false, add:="")
 					if (_escape:=Trim(SubStr(Code,FoundPos+Match.Len(),2), "`r`n`t ")) && (StrLen(_escape)=1)
 						FormatDinoStr(,,,,,{Escape: _escape})
 					else
-						FormatDinoStr(,,,,,{Escape: "\"})
+						FormatDinoStr(,,,,,{Escape: Chr(96)})
 			}
 		} else if (Match.Value(10) != "")
 			RTF .= "\cf" Map.Opers

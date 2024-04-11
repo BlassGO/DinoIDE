@@ -4,10 +4,7 @@
 
 ; Dependencies path
 current := A_ScriptDir "\bin"
-global Delimiter := Chr(34)
-      , Escape := "\"
-      , Deref:=Chr(4)
-      , ahk := current "\AutoHotkeyU64.exe"
+global ahk := current "\AutoHotkeyU64.exe"
       , ahk2exe := current "\Ahk2Exe.exe"
 	   , bin := ahk
 	   , dinocode := current "\dinocode"
@@ -301,8 +298,8 @@ EscapeStr(Byref read_line, Byref Escape, Byref _escape) {
     }
     return,unexpected?"":((_last)?resolvedstr . SubStr(read_line, _last+1) : read_line)
 }
-read_config(file) {
-   static IndentChar:=Chr(1), AnyS:=A_Space . A_Tab . "`r`n"
+read_config(file, Escape:="``") {
+   static IndentChar:=Chr(1), Delimiter:=Chr(34), AnyS:=A_Space . A_Tab . "`r`n"
    InStr(FileExist(file), "A") ? dir:=dirname(file) : abort("Cant find config-->" file)
    if error
    return 0
@@ -311,14 +308,16 @@ read_config(file) {
 		while (!file.AtEOF())
 		{
          tag:=false, _pos:=0, read_line:=file.ReadLine(),line_indent:=GetIndent(read_line,_pos), read_line:=RTrim(SubStr(read_line,_pos),"`r`n")
-         (txt!=""&&line_indent<=txt) ? txt:=""
-         if !txt {
+         (txt!=""&&line_indent<=txt) ? (txt:="", include_blank:=true)
+         if (txt="") {
             read_line:=RTrim(read_line,AnyS)
             if (SubStr(read_line,1,1)=":") {
                tag:=true
             } else if (SubStr(read_line,1,1)=">") {
                txt:=line_indent ;, read_line:=StrReplace(read_line, A_Space)
             } else if (read_line="") {
+               if include_blank
+               content.=IndentChar . line_indent . IndentChar . "`r`n", include_blank:=false
                continue
             } else if multi_note {
                (SubStr(read_line,-1)="*#") ? multi_note:=false
@@ -336,7 +335,7 @@ read_config(file) {
          action:=""
 		   if tag {
             read_line:=StrReplace(StrReplace(read_line, A_Space),A_Tab) . "`r`n"
-         } else if txt {
+         } else if (txt!="") {
             read_line:=IndentChar . line_indent . IndentChar . read_line . "`r`n"
          } else {
             ; This analysis is superficial focused on the simplification of the indentation and obtaining simple parameters.
@@ -356,7 +355,7 @@ read_config(file) {
                   {
                      case "import", "importar":
                         for count, value in main_action
-                           content:=read_config(InStr(FileExist(dir "\" value), "A") ? dir "\" value : value) . content
+                           content:=read_config(InStr(FileExist(dir "\" value), "A") ? dir "\" value : value, Escape) . content
                         continue
                      case "escape":
                         if (StrLen(main_action.1)=1) {
@@ -379,7 +378,7 @@ read_config(file) {
 build() {
    global to_exe, config_tracking
    Gui 1: Submit, NoHide
-   libs:="", extralibs:="", Escape:="\", error:=false
+   libs:="", extralibs:="", error:=false
    out:=dirname(config) "\" simplename(config) ".exe"
    tmp:=out . "~"
    (compress="") ? compress:=2

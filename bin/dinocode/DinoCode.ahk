@@ -419,11 +419,11 @@ ReadFile(file,enc:="UTF-8") {
    }
    return content
 }
-WriteFile(file, content:="", enc:="UTF-8-RAW") {
+WriteFile(file, content:="", enc:="UTF-8-RAW", EOLTranslation:=false) {
    try {
     if !Exist("folder",dest:=dirname(GetFullPathName(file)))
 	FileCreateDir, % dest
-    FileAppend, % content, % file, % enc
+    FileAppend, % content, % (EOLTranslation?"":"*") . file, % enc
 	return 1
    } catch e {
     unexpected:="Cant write in-->""" file """, Ended with: " e.message
@@ -1008,7 +1008,7 @@ EscapeStr(Byref read_line, Byref Escape, Byref _escape) {
     return,unexpected?"":((_last)?resolvedstr . SubStr(read_line, _last+1) : read_line)
 }
 EscapeChars(Byref _string, Byref Escape) {
-    static Deref:=Chr(4), _escapechars:={110:"`r`n",78:"`n",97:"`a",98:"`b",102:"`f",114:"`r",116:"`t",118:"`v"}
+    static Deref:=Chr(4), _escapechars:={78:"`r`n",110:"`n",97:"`a",98:"`b",102:"`f",114:"`r",116:"`t",118:"`v"}
     resolved:="", start:=1, end:=0, last_skip:=0, carefully:=(Escape="&"||Escape="~"||Escape="``")
     while,(start:=InStr(_string, Escape, false, start))
     is_ref:=(carefully&&start-1>end&&SubStr(_string, start-1, 1)=Deref), resolved.=SubStr(_string, last_skip+1, start-1-last_skip), (is_ref&&(end:=InStr(_string, Deref, false, start+1))) ? (resolved.=SubStr(_string, start, end-start+1), start:=end):(start+=1, char:=Substr(_string, start, 1), resolved.=((_escapechars[key:=Asc(char)])="") ? char : _escapechars[key]), last_skip:=start, start+=1
@@ -1041,7 +1041,7 @@ solve_escape_string(ByRef str, Byref _result:="", ByRef _evaluated:="", Byref _h
 }
 load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",newmain:=false,ResetEval:=true) {
    global unexpected,secure_user_info,config_tracking
-   static IndentChar:=Chr(1),SpaceTAB:=A_Space . A_Tab,LineBreak:="`n",Delimiter:=Chr(34),Escape:="\",Deref:=Chr(4),last_label,main_nickname,script_section,FD,SIGNALME,_thread,_escape,_result,_evaluated,read_line_,ARGS,to_return
+   static IndentChar:=Chr(1),SpaceTAB:=A_Space . A_Tab,LineBreak:="`n",Delimiter:=Chr(34),Escape:=Chr(96),Deref:=Chr(4),last_label,main_nickname,script_section,FD,SIGNALME,_thread,_escape,_result,_evaluated,read_line_,ARGS,to_return
    (newmain||!isObject(FD)) ? (last_label:="",FD_CURRENT:="",unexpected:="",main_nickname:="",script_section:={},GLOBAL:={},FD:={1:new DObj({main: A_Args})},SIGNALME:={exit:1, def:{}},_escape:=[],_result:=[],_evaluated:=[],_thread:={},lang(,,,,,true),maps(,,true),gui(,,true),config_rc())
    if configstr {
 	   local ? (outfd:=FD.MaxIndex()+1, FD[outfd]:=new DObj(local_obj), last_label ? SIGNALME.main:={[outfd]: last_label}) : (FD.HasKey(from_fd) ? (outfd:=from_fd, FD[outfd].Parse(local_obj)) : outfd:=1)
@@ -1067,7 +1067,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 	  }
 	  _startchr:="",_pos:=0,is_callout?(line_indent:=0, read_line:=LTrim(A_LoopField,SpaceTAB)):((SubStr(A_LoopField,1,1)=IndentChar)?(_pos:=InStr(A_LoopField,IndentChar,false,2), line_indent:=SubStr(A_LoopField,2,_pos-2), read_line:=_pos?SubStr(A_LoopField,_pos+1):"", is_compiled:=true):(line_indent:=GetIndent(A_LoopField,_pos), read_line:=SubStr(A_LoopField,_pos))), is_to_var:=(to_var.var="")?"":(line_indent>to_var.indent)
 	  if !is_to_var {
-		if (read_line=""&&line!=total)
+		if (read_line=""&&is_to_var=""&&line!=total)
 		continue
 		_startchr:=SubStr(read_line,1,2), read_line2:=read_line
 		if !is_compiled&&(SubStr(_startchr,1,1)="#") {
@@ -1311,7 +1311,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		   return 0
 		 }
 	  }
-	  if (to_var.var!="") {
+	  if (is_to_var!="") {
 	     if is_to_var {
 			read_line:=EscapeChars(read_line, Escape), read_line:=EscapePercent(read_line,_evaluated,FD,true)
 			if unexpected
@@ -1614,12 +1614,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			   if (_var:=isObjRef(read_line_.set.1)) {
 				    _var:=SubStr(read_line_.set.1,1,_var)
 					try {
-						isObject(FD[outfd][_var])?(IsObject(read_line_.with)?false:FD[outfd][_var]:={}):FD[outfd][_var]:={}
+						(SubStr(_var,1,1)=Deref)?false:(isObject(FD[outfd][_var])?(IsObject(read_line_.with)?false:FD[outfd][_var]:={}):FD[outfd][_var]:={})
 						ParseObjects(read_line_.set.1, FD, ":=", (read_line_.with.MaxIndex()>1) ? read_line_.with : read_line_.with.1,_escape, _result, _evaluated,_hasexpr)
 						if unexpected
 			   			break
 					} catch {
-						unexpected:="Could not define var--->" . read_line_.set.1
+						unexpected:="Could not define property--->" . read_line_.set.1
 						break
 					}
 			   } else {
