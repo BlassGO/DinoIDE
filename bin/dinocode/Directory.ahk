@@ -22,7 +22,7 @@ class Directory
     content(mode:="FDR") {
         _temp:=""
         Loop, Files, % this.path . "\*", % mode
-            (_temp)?_temp.="`n":false,_temp.=A_LoopFileFullPath
+            _temp.=((_temp="")?"":"`n") . A_LoopFileFullPath
         return _temp
     }
     create() {
@@ -90,8 +90,9 @@ class Directory
         return (ErrorLevel=0)
     }
     findstr(str,str2:="",mode:="FR",limit:="") {
-        _temp:="",_count:=0,fileobj:=New File()
-        if IsObject(file) {
+        _temp:="",_count:=0
+        try {
+            fileobj:=New File()
             Loop, Files, % this.path . "\*", % mode
             {
                 fileobj.path:=A_LoopFileLongPath

@@ -854,84 +854,76 @@ maps(key:="",add:="",reset:=false) {
 GetNextToken(ByRef s, Byref p, len:=0, Byref _chr:="", Byref _lastchr:="", Byref stop:=false, delimiter:=";")
 {
     static $Quote=Chr(34), Deref:=Chr(4)
-	p:=(p)?p:1, len:=(len)?len:StrLen(s), _chr:="", _lastchr:="", stop:=""
-	while,(p>0&&p<=len)
+	p:=p?p:1,len:=len?len:StrLen(s),_chr:=_lastchr:=stop:=""
+	while,p>0&&p<=len
 	{
-		_char:=SubStr(s, p, 1)
-		if (_char=A_Space||_char=A_Tab) {
-           if word
-              break
-           else
-              p++
+		_char:=SubStr(s,p,1)
+		if (_char=A_Space||_char=A_Tab)
+		{
+		if word
+		break
+		else
+		p++
 		} else if _char=(
-            _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,,,len)
+        _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,,,len)
 		else if _char=[
-            _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,"[","]",len)
-		else if word&&(_char=".")
-			_chr:="%", _lastchr:=_char, p+=1
-		else if (_char=delimiter||_char="#") {
-            stop:=_char
-			break
-        } else if !word {
-            if (_char=$Quote)
-                _chr:=_char, at:=p, p:=InStr(s,$Quote,false,p+1),p:=p?p+1:0
-            else if (_char=Deref)
-                _chr:=SubStr(s,p+1,1), word:=p, p+=1
-            else
-                word:=p, p+=1
-            if (p=0)
-               at:=0, p:=-1
-        } else 
-          p++
-		if at
-			break
+        _chr:="%", _lastchr:=_char, at:=word?at:p, p:=EnclosingWithQuotes(s,p,"[","]",len)
+		else if word&&_char="."
+		_chr:="%", _lastchr:=_char, p+=1
+		else if (_char=delimiter||_char="#")
+        stop:=_char
+        else if !word
+        (_char=$Quote)?(_chr:=_char, at:=p, (p:=InStr(s,$Quote,false,p+1))?(p+=1):(at:=0, p:=-1)):((_char=Deref)?(_chr:=SubStr(s,p+1,1), word:=p, p+=1):(word:=p, p+=1))
+        else 
+        p++
+		if at||stop
+		break
 	}
-    return,(word)?SubStr(s,word,p-word):(at?SubStr(s,at,p-at):"")
+    return,word?SubStr(s,word,p-word):(at?SubStr(s,at,p-at):"")
 }
 GetNextObjRef(ByRef s, Byref word, Byref p, len:=0)
 {
-	static Deref:=Chr(4), Expr:="``"
-	p:=(p)?p:1, len:=(len)?len:StrLen(s)
-	while,(p>0&&p<=len)
+	static Chars:="_,$,``," . Chr(4)
+	p:=p?p:1,len:=len?len:StrLen(s)
+	while,p>0&&p<=len
 	{
-		_char:=SubStr(s, p, 1)
-		if (_char=A_Space||_char=A_Tab||_char=")") {
-           if objref
-              break
-           else
-              word:=0, p+=1
+		_char:=SubStr(s,p,1)
+		if _char in `t, ,)
+        {
+		if objref
+		break
+		else
+		word:=0, p+=1
 		} else if word {
-			if _char=(
-            	p:=EnclosingWithQuotes(s,p,,,len)
-			else if _char=[
-				objref:=true, p:=EnclosingWithQuotes(s,p,"[","]",len)
-			else if _char=.
-				objref:=true, p+=1
-            else if (_char="_")||(_char="$")||(_char=Deref)||(_char=Expr)
-                p++
-			else if _char is alnum
-				p++
-            else if objref
-                break
-            else
-                word:=0, p+=1
-			if (p=0)
-               word:=0, p:=-1
-        } else if (_char="_")||(_char="$")||(_char=Deref)||(_char=Expr)
-            word:=p, p+=1
+		if _char=(
+		(p:=EnclosingWithQuotes(s,p,,,len))?true:(word:=0, p:=-1)
+		else if _char=[
+		objref:=true, (p:=EnclosingWithQuotes(s,p,"[","]",len))?true:(word:=0, p:=-1)
+		else if _char=.
+		objref:=true, p+=1
+		else if _char in %Chars%
+		p++
+		else if _char is alnum
+		p++
+		else if objref
+		break
+		else
+		word:=0, p+=1
+        } else if _char in %Chars%
+        word:=p, p+=1
 		else if _char is alpha
-			word:=p, p+=1
+		word:=p, p+=1
         else
-            p++
+        p++
 	}
     return,(objref&&word)?SubStr(s,word,p-word):""
 }
 GetNextMethod(ByRef s, Byref p, len:=0, Byref isdot:=false)
 {
-	p:=(p)?p:1, len:=(len)?len:StrLen(s), isdot:=false
-	while,(p>0&&p<=len)
+	p:=p?p:1,len:=len?len:StrLen(s),isdot:=false
+	while,p>0&&p<=len
 	{
-		_char:=SubStr(s, p, 1)
+		_char:=SubStr(s,p,1)
 		if (_char=A_Space||_char=A_Tab)
         break
 		else if _char=.
@@ -946,29 +938,29 @@ GetNextMethod(ByRef s, Byref p, len:=0, Byref isdot:=false)
         break
         p++
 	}
-    return,_key?(SubStr(s,_key,p-_key)):((method)?SubStr(s,method,p-method):"")
+    return,_key?(SubStr(s,_key,p-_key)):(method?SubStr(s,method,p-method):"")
 }
 EscapeExpr(Byref read_line, Byref _result, len:=0, Byref _hasexpr:=0, Byref _maxexpr:=0) {
-	static Deref:=Chr(4), $Expr:="$", $ExprP:="$(", $ExprChr:="``"
-    _pos:=1, _extra:=0, _last:=1, resolvedstr:="", read_line_len:=len?len:StrLen(read_line)
-    while,(_pos:=InStr(read_line,$ExprP,false,_pos+_extra))
+	static Deref:=Chr(4),$Expr:="$",$ExprP:="$(",$ExprChr:="``"
+    _pos:=1,_extra:=0,_last:=1,resolvedstr:="",read_line_len:=len?len:StrLen(read_line)
+    while,_pos:=InStr(read_line,$ExprP,false,_pos+_extra)
     {
-		if (SubStr(read_line,_pos-1,1)="$")
+		if (SubStr(read_line,_pos-1,1)=$Expr)
 		resolvedstr.=SubStr(read_line, _last, _pos-_last), _end:=_pos+1
-		else if (_end:=EnclosingExpr(read_line,_pos,,,read_line_len))
-		_result.Push(SubStr(read_line,_pos,_end-_pos)), _maxexpr:=_result.MaxIndex(), resolvedstr.=SubStr(read_line, _last, _pos-_last) . Deref . $ExprChr . _maxexpr . $ExprChr . Deref, (A_Index=1)?_hasexpr:=_maxexpr:false
+		else if _end:=EnclosingExpr(read_line,_pos,,,read_line_len)
+		_result.Push(SubStr(read_line,_pos+2,_end-_pos-3)), _maxexpr:=_result.MaxIndex(), resolvedstr.=SubStr(read_line, _last, _pos-_last) . Deref . $ExprChr . _maxexpr . $ExprChr . Deref, (A_Index=1)?_hasexpr:=_maxexpr:false
 		else {
 			unexpected:="Expression -> '$(' without closing -> ')'"
 			break
 		}
-		_extra:=_end-_pos, _last:=_end
+		_extra:=_end-_pos,_last:=_end
     }
-    return,unexpected?"":((_last>1)?resolvedstr . SubStr(read_line, _last) : read_line)
+    return,unexpected?"":((_last>1)?resolvedstr . SubStr(read_line, _last):read_line)
 }
 EscapePercent(Byref read_line, Byref _evaluated, Byref FD, just_append:=false) {
-    static Deref:=Chr(4), $Percent:="%"
-    _pos:=1, _extra:=0, _last:=0, resolvedstr:=""
-    while,(_pos:=InStr(read_line,$Percent,false,_pos+_extra))
+    static Deref:=Chr(4),$Percent:="%"
+    _pos:=1,_extra:=0,_last:=0,resolvedstr:=""
+    while,_pos:=InStr(read_line,$Percent,false,_pos+_extra)
     {
 		_end:=InStr(read_line,$Percent,false,_pos+1)
 		if _end=0
@@ -976,7 +968,7 @@ EscapePercent(Byref read_line, Byref _evaluated, Byref FD, just_append:=false) {
 		if ((_end-_pos)-1=0)
 		resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . $Percent
 		else {
-			_eval:=Eval(SubStr(read_line,_pos+1,(_end-_pos)-1), FD,,_escape,,,3)
+			_eval:=Eval(SubStr(read_line,_pos+1,(_end-_pos)-1),FD,,_escape,,,3)
 			if unexpected
 	  		break
 			if just_append||isNumber(_eval)
@@ -984,59 +976,56 @@ EscapePercent(Byref read_line, Byref _evaluated, Byref FD, just_append:=false) {
 			else
 			_evaluated.Push(_eval), resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . Deref . "~" . _evaluated.MaxIndex() . "~" . Deref
 		}
-		_eval:="", _extra:=(_end-_pos)+1, _last:=_end
+		_eval:="",_extra:=(_end-_pos)+1,_last:=_end
     }
-    return,unexpected?"":((_last)?resolvedstr . SubStr(read_line, _last+1) : read_line)
+    return,unexpected?"":((_last)?resolvedstr . SubStr(read_line, _last+1):read_line)
 }
 EscapeStr(Byref read_line, Byref Escape, Byref _escape) {
-    static Deref:=Chr(4), $Quote=Chr(34), $Quotes=Chr(34) . Chr(34)
-    _pos:=1, _extra:=0, _last:=0, resolvedstr:=""
-    while,(_pos:=InStr(read_line,$Quote,false,_pos+_extra))
+    static Deref:=Chr(4),$Quote=Chr(34),$Quotes=Chr(34) . Chr(34)
+    _pos:=1,_extra:=0,_last:=0,resolvedstr:=""
+    while,_pos:=InStr(read_line,$Quote,false,_pos+_extra)
     {
-        _end:=_pos, is_quoted:=0
+        _end:=_pos,is_quoted:=0
         Loop
         _end:=InStr(read_line,$Quote,false,_end+1)
 		Until,(_end=0)||!(SubStr(read_line,_end+1,1)=$Quote&&(is_quoted:=_end+=1))
-        if (_end=0) {
+        if _end=0
+		{
             unexpected:="A closure was expected--->"""
             break
         } else {
 			((_end-_pos)-1=0) ? (resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . $Quotes):(_escape.Push(EscapeChars(is_quoted?StrReplace(SubStr(read_line,_pos+1,(_end-_pos)-1),$Quotes,$Quote):SubStr(read_line,_pos+1,(_end-_pos)-1), Escape)), resolvedstr.=SubStr(read_line, _last+1, (_pos-_last)-1) . $Quote . Deref . "&" . _escape.MaxIndex() . "&" . Deref . $Quote)
-			_extra:=(_end-_pos)+1, _last:=_end
+			_extra:=(_end-_pos)+1,_last:=_end
         }
     }
-    return,unexpected?"":((_last)?resolvedstr . SubStr(read_line, _last+1) : read_line)
+    return,unexpected?"":((_last)?resolvedstr . SubStr(read_line, _last+1):read_line)
 }
 EscapeChars(Byref _string, Byref Escape) {
-    static Deref:=Chr(4), _escapechars:={78:"`r`n",110:"`n",97:"`a",98:"`b",102:"`f",114:"`r",116:"`t",118:"`v"}
-    resolved:="", start:=1, end:=0, last_skip:=0, carefully:=(Escape="&"||Escape="~"||Escape="``")
-    while,(start:=InStr(_string, Escape, false, start))
-    is_ref:=(carefully&&start-1>end&&SubStr(_string, start-1, 1)=Deref), resolved.=SubStr(_string, last_skip+1, start-1-last_skip), (is_ref&&(end:=InStr(_string, Deref, false, start+1))) ? (resolved.=SubStr(_string, start, end-start+1), start:=end):(start+=1, char:=Substr(_string, start, 1), resolved.=((_escapechars[key:=Asc(char)])="") ? char : _escapechars[key]), last_skip:=start, start+=1
-    return,last_skip ? resolved . Substr(_string, last_skip+1) : _string
-}
-FormatString(Byref str) {
-	static Deref:=Chr(4)
-	return,StrReplace(str,Deref)
+    static Deref:=Chr(4),_escapechars:={78:"`r`n",110:"`n",97:"`a",98:"`b",102:"`f",114:"`r",116:"`t",118:"`v"}
+    resolved:="",start:=1,end:=0,last_skip:=0,carefully:=(Escape="&"||Escape="~"||Escape="``")
+    while,start:=InStr(_string,Escape,false,start)
+    is_ref:=(carefully&&start-1>end&&SubStr(_string,start-1,1)=Deref), resolved.=SubStr(_string, last_skip+1, start-1-last_skip), (is_ref&&(end:=InStr(_string, Deref, false, start+1))) ? (resolved.=SubStr(_string, start, end-start+1), start:=end):(start+=1, char:=Substr(_string, start, 1), resolved.=((_escapechars[key:=Asc(char)])="") ? char : _escapechars[key]), last_skip:=start, start+=1
+    return,last_skip?resolved . Substr(_string, last_skip+1):_string
 }
 solve_escape(ByRef str, ByRef from:="", key:="&") {
 	static Deref:=Chr(4)
     resolved:="",resolved_end:=0
-    Loop, Parse, str, % Deref
+    Loop,Parse,str,% Deref
 	resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1)))?(((_chr:=SubStr(A_LoopField,1,1))&&_chr=key)?from[_index]:Deref . A_LoopField . Deref):A_LoopField, resolved_end:=A_Index
     return,(resolved_end>1)?str:=resolved:str
 }
 solve_any_escape(ByRef str, Byref _escape:="", Byref _result:="", ByRef _evaluated:="", Byref _hasexpr:=0) {
 	static Deref:=Chr(4)
     resolved:="",resolved_end:=0
-    Loop, Parse, str, % Deref
+    Loop,Parse,str,% Deref
 	resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1))&&(_chr:=SubStr(A_LoopField,1,1)))?((_chr="&")?(solve_escape_string(_escape[_index],_result,_evaluated,_hasexpr)):((_chr="~")?_evaluated[_index]:((_chr="``")?_result[_index]:Deref . A_LoopField . Deref))):A_LoopField, resolved_end:=A_Index
     return,(resolved_end>1)?resolved:str
 }
 solve_escape_string(ByRef str, Byref _result:="", ByRef _evaluated:="", Byref _hasexpr:=0) {
 	static Deref:=Chr(4)
     resolved:="",resolved_end:=0
-    Loop, Parse, str, % Deref
-	resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1))&&(_chr:=SubStr(A_LoopField,1,1)))?((_chr="~")?(_evaluated[_index]):((_chr="``")?((_index<=_hasexpr)?_result[_index]:((_hasexpr+=1)?load_config(Substr(_result[_index],3,-1),,,FD_CURRENT,"resolve",,false):"")):Deref . A_LoopField . Deref)):A_LoopField, resolved_end:=A_Index
+    Loop,Parse,str,% Deref
+	resolved.=((Mod(A_Index,2)=0)&&IsNumber(_index:=SubStr(A_LoopField,2,-1))&&(_chr:=SubStr(A_LoopField,1,1)))?((_chr="~")?(_evaluated[_index]):((_chr="``")?((_index<=_hasexpr)?_result[_index]:((_hasexpr+=1)?load_config(_result[_index],,,FD_CURRENT,"resolve",,false):"")):Deref . A_LoopField . Deref)):A_LoopField, resolved_end:=A_Index
     return,(resolved_end>1)?resolved:str
 }
 load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",newmain:=false,ResetEval:=true) {
@@ -1053,12 +1042,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 	   StringCaseSense, Off
 	   to_return:=0, line:=0, total:=1, _pos:=0, unexpected:="", is_partline:=(from_type="resolvepart"), is_callmulti:=(from_type="resolveblock"), is_callout:=(from_type="resolve"), (!(newmain||is_partline||is_callout||is_callmulti))?(_escape:=[],_result:=[],_evaluated:=[]):newmain:=false
 	   if !(is_partline||is_callout)
-	   while,(_pos:=InStr(configstr,LineBreak,false,_pos+1))
+	   while,_pos:=InStr(configstr,LineBreak,false,_pos+1)
 	   total++
    } else {
       return 0
    }
-   Loop, parse, configstr, `n,`r 
+   Loop,parse,configstr,`n,`r 
    {
       line+=1
 	  if multi_note {
@@ -1157,24 +1146,25 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			  _for:=read_line_, read_line_:=""
 			  if isNumber(SubStr(_for.for.1,1,2)) {
 				(isNumber(SubStr(_for.for.2,1,2))) ? FD[outfd].Index:=Index:=_for.for.1 : (FD[outfd].Index:=Index:=1, _for.for.2:=_for.for.1)
-				while,(Index<=_for.for.2) {
+				while,Index<=_for.for.2
+				{
 				    to_return:=load_config(block_capture,,,outfd,block_type),FD_CURRENT:=outfd
 					if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
-						break
+					break
 					FD[outfd].Index:=Index+=1
-					if (SIGNALME.code=3.1) {
+					if (SIGNALME.code=3.1){
 						SIGNALME.code:=""
 						continue
 					}
 				}
 			  } else if _for.for.2 {
 				Index:=1, _for_vars:=[_for.for.1, _for.for.2]
-                for key, val in _for.in {
+                for key,val in _for.in {
 					for key2, val2 in Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2) {
 						FD[outfd][_for_vars.1]:=key2, FD[outfd][_for_vars.2]:=val2, FD[outfd].Index:=Index,to_return:=load_config(block_capture,,,outfd,block_type),FD_CURRENT:=outfd
 						if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
-							break 2
-						else if (SIGNALME.code=3.1) {
+						break 2
+						else if (SIGNALME.code=3.1){
 							SIGNALME.code:=""
 							continue
 						}
@@ -1183,12 +1173,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				}
 			  } else {
 				_for_vars:=[_for.for.1]
-				for key, val in _for.in {
+				for key,val in _for.in {
 					FD[outfd][_for_vars.1]:=Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2), FD[outfd].Index:=A_Index
 					to_return:=load_config(block_capture,,,outfd,block_type),FD_CURRENT:=outfd
 					if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
-						break
-					else if (SIGNALME.code=3.1) {
+					break
+					else if (SIGNALME.code=3.1){
 						SIGNALME.code:=""
 						continue
 					}
@@ -1197,12 +1187,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			  _for:=""
 		   } else if (block_key="forchar") {
 			  _for_vars:=["Section"]
-			  Loop, Parse, % Eval(read_line_.in.1, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2), % read_line_.forchar.1
+			  Loop,Parse,% Eval(read_line_.in.1, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2), % read_line_.forchar.1
 			  {
 					FD[outfd].Section:=A_LoopField, FD[outfd].Index:=A_Index,to_return:=load_config(block_capture,,,outfd,block_type),FD_CURRENT:=outfd
 					if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
-						break
-					else if (SIGNALME.code=3.1) {
+					break
+					else if (SIGNALME.code=3.1){
 						SIGNALME.code:=""
 						continue
 					}
@@ -1210,12 +1200,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		   } else if (block_key="forobj") {
 			  	Index:=1, _for:=read_line_, read_line_:="", _for_vars:=[_for.forobj.1, _for.forobj.2]
                 if _for.forobj.2 {
-					for key, val in _for.in {
-						for key2, val2 in Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2) {
+					for key,val in _for.in {
+						for key2,val2 in Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2) {
 							FD[outfd][_for_vars.1]:=key2, FD[outfd][_for_vars.2]:=val2, FD[outfd].Index:=Index,to_return:=load_config(block_capture,,,outfd,block_type),FD_CURRENT:=outfd
 							if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
-								break 2
-							else if (SIGNALME.code=3.1) {
+							break 2
+							else if (SIGNALME.code=3.1){
 								SIGNALME.code:=""
 								continue
 							}
@@ -1223,12 +1213,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 						}
 					}
 				} else {
-					for key, val in _for.in {
+					for key,val in _for.in {
 						for key2 in Eval(val, FD,_Objects,_escapetmp,_resulttmp,_evaluatedtmp,2) {
 							FD[outfd][_for_vars.1]:=key2, FD[outfd].Index:=Index,to_return:=load_config(block_capture,,,outfd,block_type),FD_CURRENT:=outfd
 							if isObject(SIGNALME.unexpected)||(SIGNALME.code&&SIGNALME.code<=3)
-								break 2
-							else if (SIGNALME.code=3.1) {
+							break 2
+							else if (SIGNALME.code=3.1){
 								SIGNALME.code:=""
 								continue
 							}
@@ -1239,29 +1229,30 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				_for:=""
 		   } else if (block_key="switch") {
 			  _switch:=read_line_.switch.1, _switch_sensitive:=read_line_.switch.2, _case_indent:=_switch_block:=_switch_pass:=""
-			  Loop, parse, block_capture, `n
+			  Loop,parse,block_capture,`n
    			  {
-				if (_pos:=InStr(A_LoopField,IndentChar,false,1,2)) && (_case_indent=""||SubStr(A_LoopField,2,_pos-2)<=_case_indent) && (_endword:=WhileWord(A_LoopField,_pos+1)) {
-					if (_key:=lang(,SubStr(A_LoopField,_pos+1,_endword-_pos),,"case")) {
+				if (_pos:=InStr(A_LoopField,IndentChar,false,1,2))&&(_case_indent=""||SubStr(A_LoopField,2,_pos-2)<=_case_indent) && (_endword:=WhileWord(A_LoopField,_pos+1)) {
+					if _key:=lang(,SubStr(A_LoopField,_pos+1,_endword-_pos),,"case")
+					{
 						if _switch_pass
 						break
 						_case_indent:=SubStr(A_LoopField,2,_pos-2)
 						if (_key="default") {
 							_switch_pass:=true
 						} else {
-							for key, val in Eval(EscapeStr(SubStr(A_LoopField, _endword+1),Escape,_escape),FD,,_escape)
-								if (_switch_pass:=_switch_sensitive?_switch==val:_switch=val)
-									break
+							for key,val in Eval(EscapeStr(SubStr(A_LoopField, _endword+1),Escape,_escape),FD,,_escape)
+								if _switch_pass:=_switch_sensitive?_switch==val:_switch=val
+								break
 						}
 					} else {
 						unexpected:="Only ""CASE"" blocks can exist within a SWITCH block", orig_block.="`n               " . SubStr(A_LoopField,_pos+1)
 						break
 					}
 				} else if _switch_pass
-					_switch_block.=LineBreak . A_LoopField
+				_switch_block.=LineBreak . A_LoopField
 			  }
 			  if !(_switch_block=""||_switch_block=LineBreak)
-			  	 to_return:=load_config(_switch_block,,,outfd,block_type)
+			  to_return:=load_config(_switch_block,,,outfd,block_type)
 		   }
 		   block_capture:="", last_label:=back_label
 		   (unexpected&&!from_type) ? from_type:=block_type
@@ -1405,7 +1396,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		_resulttmp:=_result,_evaluatedtmp:=_evaluated,_escapetmp:=_escape,_result:=[],_evaluated:=[]
 		while,(_hasexpr<=_maxexpr)
 		{
-			_resulttmp[_hasexpr]:=load_config(Substr(_resulttmp[_hasexpr],3,-1),,,outfd,"resolve")
+			_resulttmp[_hasexpr]:=load_config(_resulttmp[_hasexpr],,,outfd,"resolve")
 			if unexpected
 			break 2
 			_hasexpr++
@@ -1416,7 +1407,11 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 	  while,(_token:=GetNextToken(read_line,_pos,read_line_len,_chrfound,_lastchr,_stop))!=""
 	  {
 		 option:=(_chrfound="~")?solve_escape(_token,_evaluated,"~"):_token
-		 if (option!="") {
+		 if option=
+		 {
+			unexpected:="Percentage Expression ended: """""
+			break 2
+		 } else {
 			overwrite:=true, _expand:=0, _isstr:="", _isexpr:="", _isvar:="", _literal:="", _number:="", _var:=""
 			if (A_Index=1) {
 				always_literal:=false, force_literal:=false
@@ -1508,12 +1503,9 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			   unexpected:="Unrecognized connector--->" . _token
 			   break 2
 			}
-		 } else {
-			unexpected:="Percentage Expression ended: """""
-			break 2
 		 }
-		  if _stop
-			break
+		if _stop
+		break
 	  }
 	 if with_partial {
 		switch (with_partial) {
@@ -1536,31 +1528,33 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		continue
 	 }
 	 back_label:=last_label
-	 if (main_type="section") {
+	 if main_type=section
+	 {
 		last_label:=main_action, to_return:=load_config(script_section[main_action],true,read_line_), (FD_CURRENT>1)?FD.Pop():false, FD_CURRENT:=outfd, last_label:=back_label
 		if isObject(SIGNALME.unexpected)
 		   break
-	 } else if (main_type="function") {
+	 }
+	 else if main_type=function
+	 {
 		if maps[main_action].atpos {
 		  ARGS:=[]
 		  for key in read_line_ {
 			 if maps[key].at {
-				Loop, parse, % maps[key].at, `,
+				Loop,parse,% maps[key].at,`,
 				{
 				   if maps[key].expand {
 					  for count, value in read_line_[key]
-						  ARGS[A_LoopField+count-1]:=value
-				   } else {
-					  ARGS[A_LoopField]:=read_line_[key][A_Index]
-				   }
+					  ARGS[A_LoopField+count-1]:=value
+				   } else
+					ARGS[A_LoopField]:=read_line_[key][A_Index]
 				}
 			 }
 		  }
 		  read_line_:={}, read_line_[main_action]:=ARGS, ARGS:=""
 		}
-		to_return:=(skip_functions&&main_action~=skip_functions) ? "" : %main_action%(read_line_[main_action]*)
+		to_return:=(skip_functions&&main_action~=skip_functions)?"":%main_action%(read_line_[main_action]*)
 		if unexpected
-		    break	
+		break	
 	 } else {
 		switch (main_action) {
 		   case "global":
@@ -1611,11 +1605,12 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				}
 				return 1
 		   case "set":
-			   if (_var:=isObjRef(read_line_.set.1)) {
+			   if _var:=isObjRef(read_line_.set.1)
+			   {
 				    _var:=SubStr(read_line_.set.1,1,_var)
 					try {
 						(SubStr(_var,1,1)=Deref)?false:(isObject(FD[outfd][_var])?(IsObject(read_line_.with)?false:FD[outfd][_var]:={}):FD[outfd][_var]:={})
-						ParseObjects(read_line_.set.1, FD, ":=", (read_line_.with.MaxIndex()>1) ? read_line_.with : read_line_.with.1,_escape, _result, _evaluated,_hasexpr)
+						ParseObjects(read_line_.set.1,FD,":=",(read_line_.with.MaxIndex()>1)?read_line_.with:read_line_.with.1,_escape, _result, _evaluated,_hasexpr)
 						if unexpected
 			   			break
 					} catch {
@@ -1623,7 +1618,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 						break
 					}
 			   } else {
-			       try FD[outfd][read_line_.set.1]:=(read_line_.with.MaxIndex()>1) ? read_line_.with : read_line_.with.1
+			       try FD[outfd][read_line_.set.1]:=(read_line_.with.MaxIndex()>1)?read_line_.with:read_line_.with.1
 				   catch {
 					  unexpected:="Could not define var--->" . read_line_.set.1
 					  break
@@ -1653,8 +1648,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		           break
 		}	   
 	 }
-     read_line_:=""
-	 (_stop=";") ? to_return:=load_config(SubStr(read_line,_pos+1),,,outfd,"resolvepart")
+     read_line_:="",(_stop=";")?to_return:=load_config(SubStr(read_line,_pos+1),,,outfd,"resolvepart")
    }
    if unexpected||isObject(SIGNALME.unexpected) {
      read_line_:=""
@@ -1688,10 +1682,9 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 SIGNALME.code:=1.1, SIGNALME.exit:=0
 		 MsgBox, 262160, Config Exception, % to_show
 	 }
-	 return 0
-   } else {
-     return to_return
-   }
+	 return,0
+   } else
+   return,to_return
 }
 RuntimeError(error) {
    MsgBox, 262160, Runtime Exception, % "Internal error in -> [" . A_ScriptName . "]`n`nFile: " . RegExReplace(error.file, ".*\\([^\\]+)$", "$1") . "`nLine: " . error.line . "`nReason: " .  error.message . "`n`n---> " . error.what

@@ -113,7 +113,7 @@ ParseObjects(Byref v_String, Byref FD := "", o_Oper :=  "", Byref o_Value := "",
 	l_Matches:=[], _pos:=1, len:=StrLen(v_String)
 	While,(_method:=GetNextMethod(v_String,_pos,len,isdot))!=""
 	(!isdot)?l_Matches.Push(_method)
-	v_Obj:=l_Matches[1], l_MatchesLen:=l_Matches.Length(),(SubStr(v_Obj,1,1)=Deref)?(inkey:=SubStr(v_Obj, 3, -2), (inkey<=_hasexpr)?_ArrayObject:=_result[inkey]:(_ArrayObject:=load_config(Substr(_result[inkey],3,-1),,,FD_CURRENT,"resolve",,false),_hasexpr+=1)):_ArrayObject:=FD[FD_CURRENT][v_Obj]
+	v_Obj:=l_Matches[1], l_MatchesLen:=l_Matches.Length(),(SubStr(v_Obj,1,1)=Deref)?(inkey:=SubStr(v_Obj, 3, -2), (inkey<=_hasexpr)?_ArrayObject:=_result[inkey]:(_ArrayObject:=load_config(_result[inkey],,,FD_CURRENT,"resolve",,false),_hasexpr+=1)):_ArrayObject:=FD[FD_CURRENT][v_Obj]
 	For $i, $v in l_Matches
 	{
 		_start:=SubStr($v, 1, 1), _end:=SubStr($v, 0)
@@ -218,20 +218,20 @@ EnclosingExpr(ByRef s, p, b="$(", e=")", len:=0) {
     {
         (SubStr(s,p,2)=b)?(bc+=1,p+=2):(((_chr:=SubStr(s,p,1))=e)?(bc-=1,p+=1):((bc>=1)?((_chr=$Quote)?(p:=NextChar(s,$Quote,p),p:=p?p+1:0):((_chr="(")?(bc+=1,p+=1):p+=1)):p+=1))
         if p=0
-          return 0
+        return 0
     }
     return (bc=0)?p:0
 }
 WhileWord(ByRef s, p:=1, len:=0) {
     p:=p?p:1, len:=(len)?len:StrLen(s)
 	while,(p<=len&&((_char:=SubStr(s,p,1))!=A_Space&&_char!=A_Tab))
-		p+=1, word:=true
+	p+=1,word:=true
 	return (word)?p-1:0
 }
 GetIndent(ByRef s, Byref p:=1) {
     p:=p?p:1, indent:=0
 	while,((_char:=SubStr(s,p,1))!="")&&(_char=A_Space||_char=A_Tab)
-		p+=1, indent+=(_char=A_Tab)?4:1
+	p+=1,indent+=(_char=A_Tab)?4:1
 	return indent
 }
 WhileWordBack(ByRef s, p:="", len:=0) {
@@ -424,9 +424,9 @@ Exprap(o,ByRef s,ac,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, Byref 
 	{
 		r2:=SubStr(o,2)
 		If (r2<=_hasexpr)
-		Return, "l" . (IsObject(re[r2]) ?"l" . Deref . "``" . r2 . "``" . Deref : re[r2])
+		Return,"l" . (IsObject(re[r2])?"l" . Deref . "``" . r2 . "``" . Deref:re[r2])
 		Else
-		r1:=load_config(Substr(re[r2],3,-1),,,FD_CURRENT,"resolve",,false), _hasexpr+=1
+		r1:=load_config(re[r2],,,FD_CURRENT,"resolve",,false), _hasexpr+=1
 	} Else If r2=o
 	r1:=ParseObjects(objs[SubStr(o,2)], lp,,,esc,re,eva,_hasexpr)
 	Else if r2=p
@@ -501,11 +501,12 @@ Exprap(o,ByRef s,ac,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, Byref 
 	Return,"l" . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)&&(a2v ? lp[FD_CURRENT][a2]:a2))), stop:=!stop
 	If o=||
 	Return,"l" . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)||(a2v ? lp[FD_CURRENT][a2]:a2)))
-	If (IsObject(r1)) {
+	If IsObject(r1)
+	{
 		re.Push(r1)
-		Return, "l" . Deref . "``" . re.MaxIndex() . "``" . Deref
+		Return,"l" . Deref . "``" . re.MaxIndex() . "``" . Deref
 	} Else
-		Return, "l" . r1
+	Return,"l" . r1
 }
 /*
 SetFormat,IntegerFast,Hex
@@ -537,11 +538,12 @@ e:=e1 . SubStr(e,f1)
 Exprpa(e, Byref objs) {
 	static c1:=Chr(1)
 	len:=StrLen(e), f2:=f1:=1
-	while,(f:=InStr(e,"(",false,f1))&&(f1:=Enclosing(e,f,,,len)) {
+	while,(f:=InStr(e,"(",false,f1))&&(f1:=Enclosing(e,f,,,len))
+	{
 		m:=StrReplace(Exprpa(SubStr(e,f+1,f1-f-2),objs),c1 . c1,c1), m:=SubStr(m,2,-1),f3:=0
-		While,(f3:=InStr(m,"'",False,f3 + 1))
+		While,f3:=InStr(m,"'",False,f3+1)
 		{
-			If ((t1:=SubStr(m,f3+1,2))<>27)
+			If (t1:=SubStr(m,f3+1,2))<>27
 			m:=StrReplace(m,"'" t1,Chr("0x" . t1))
 		}
 		objs.Push(ExprCompile(StrReplace(m,"'27","'"),,false)), (word:=WhileWordBack(e,f-1)) ? (e1.=SubStr(e,f2,word-f2) . c1 . "df" . SubStr(e, word, f-word) . ";" . objs.MaxIndex() . c1) : (e1.=SubStr(e,f2,f-f2) . c1 . "dp" . objs.MaxIndex() . c1), f2:=f1
@@ -552,11 +554,12 @@ Exprpa(e, Byref objs) {
 Exprt(e, Byref objs:="")
 {
 	global Exprol
-	static c1:=Chr(1)
+	static c1:=Chr(1), $Quote=Chr(34)
 	f1:=1,_pos:=1, _extra:=0
-    while (_pos := InStr(e, """",false, _pos+_extra))
+    while,_pos:=InStr(e,$Quote,false,_pos+_extra)
     {
-	  if (_end := InStr(e, """",false, _pos+1)) {
+	  if _end:=InStr(e,$Quote,false,_pos+1)
+	  {
 		t1:=Substr(e, _pos+1, (_end-_pos)-1), _extra:=StrLen(t1)+2
 		SetFormat,IntegerFast,Hex
 		While,RegExMatch(t1,"iS)[^\w']",c)
@@ -574,15 +577,15 @@ Exprt(e, Byref objs:="")
 ,	e:=StrReplace(e," . ","\.")
 ,	e:=StrReplace(e," ")
 	e1:="",f:=1,f1:=1,len:=StrLen(e)
-	While,(m:=GetNextObjRef(e,start,f,len))
-		objs.Push(m), e1.=SubStr(e,f1,start-f1) . c1 . "do" . objs.MaxIndex() . c1,f1:=f
+	While,m:=GetNextObjRef(e,start,f,len)
+	objs.Push(m), e1.=SubStr(e,f1,start-f1) . c1 . "do" . objs.MaxIndex() . c1,f1:=f
 	e:=e1 . SubStr(e,f1),e1:="",f:=1,f1:=1
-	While,(f:=RegExMatch(e,"S)(^|[^\w#@\$])\x04``(\d+)``\x04",m,f))
-		e1.=SubStr(e,f1,f-f1) . m1 . c1 . "dr" . m2 . c1,f+=StrLen(m),f1:=f
+	While,f:=RegExMatch(e,"S)(^|[^\w#@\$])\x04``(\d+)``\x04",m,f)
+	e1.=SubStr(e,f1,f-f1) . m1 . c1 . "dr" . m2 . c1,f+=StrLen(m),f1:=f
 	e:=e1 . SubStr(e,f1),e1:="",f:=1,f1:=1
-	While,(f:=RegExMatch(e,"iS)(^|[^\w#@\$'])(0x[0-9a-fA-F]+|\d+(?:\.\d+)?)(?=[^\d\.]|$)",m,f))
+	While,f:=RegExMatch(e,"iS)(^|[^\w#@\$'])(0x[0-9a-fA-F]+|\d+(?:\.\d+)?)(?=[^\d\.]|$)",m,f)
 	{
-		If ((m1="\") && (RegExMatch(m2,"\.\d+")))
+		If (m1="\"&&RegExMatch(m2,"\.\d+"))
 		m1:="",m2:=SubStr(m2,2)
 		m2+=0
 		m2:=StrReplace(m2,".","'2E",,1)
@@ -617,9 +620,9 @@ Exprt(e, Byref objs:="")
 	If RegExMatch(e,"S)" . c1 . "[^lvod,\n]")
 	Return
 	e:=SubStr(e,2,-1),f:=0
-	While,(f:=InStr(e,"'",False,f + 1))
+	While,f:=InStr(e,"'",False,f+1)
 	{
-		If ((t1:=SubStr(e,f+1,2))<>27)
+		If (t1:=SubStr(e,f+1,2))<>27
 		e:=StrReplace(e,"'" t1,Chr("0x" . t1))
 	}
 	e:=StrReplace(e,"'27","'")
