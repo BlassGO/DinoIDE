@@ -30,8 +30,7 @@
 ;
 ;                 
 ;   lang function:
-;                 It consists of several groups/objects with respective identifiers and allows Functions, Connectors or Conditionals to have several possible nicknames,
-;                   nicknames must be standardized without diacritics, since these disappear during processing.
+;                 It consists of several groups/objects with respective identifiers and allows Functions, Connectors or Conditionals to have several possible nicknames.
 ;
 ;   maps function:
 ;                 It is a group/object that serves to define the semantics or syntax of the sentences, being able to play with Connectors in order to build a standardized list of parameters that will be sent to the respective function.
@@ -596,29 +595,10 @@ Local L := StrLen(S),   DL := StrLen(D:=(D ? D : Instr(S,"`r`n") ? "`r`n" : "`n"
 Return SubStr(S,(P1:=L?(P!=1&&InStr(S,D,,0))?(F:=InStr(S,D,,P>0,Abs(P-1)))?F+DL:P-1<1?1:0:(F:=1)
 :0),(P2:=(P1&&C!=0)?C!=""?(F:=InStr(S,D,,(C>0?F+DL:0),Abs(C)))?F-1:C>0?L:1:L:0)>=P1?P2-P1+1:0)
 }
-StrUnmark(string) {    ; By Lexicos
-    len := DllCall("Normaliz.dll\NormalizeString", "int", 2
-        , "wstr", string, "int", StrLen(string)
-        , "ptr", 0, "int", 0)  ; Get *estimated* required buffer size.
-    Loop {
-        VarSetCapacity(buf, len * 2)
-        len := DllCall("Normaliz.dll\NormalizeString", "int", 2
-            , "wstr", string, "int", StrLen(string)
-            , "ptr", &buf, "int", len)
-        if len >= 0
-            break
-        if (A_LastError != 122) ; ERROR_INSUFFICIENT_BUFFER
-            return
-        len *= -1  ; This is the new estimate.
-    }
-    ; Remove combining marks and return result.
-    return RegExReplace(StrGet(&buf, len, "UTF-16"), "\pM")
-}
-lang(key:="",str:="",regex:=false,group:="langs",add:="",reset:=false) {
-   static custom, custom_main, return, connectors, condition, scripts, signal, langs, case
-   str ? str:=StrUnmark(str)
-   if reset||!isObject(return) {
-       custom:={}, custom_main={}
+lang(key:="",str:="",group:="langs",add:="",reset:=false) {
+   static custom, custom_main, return, connectors, condition, scripts, signal, langs, case, is_set
+   if reset||!is_set {
+       custom:={}, custom_main={}, is_set:=true
        return:=
        (join
           {
@@ -718,13 +698,13 @@ lang(key:="",str:="",regex:=false,group:="langs",add:="",reset:=false) {
 							 break 2
 						  }
 					  } else {
-					     custom_main[group].Push(StrUnmark(A_LoopField))
+					     custom_main[group].Push(A_LoopField)
 					  }
 				   }
 			   }
 		   }
 		} else {
-			custom[group][_with1]:=[StrUnmark(_with1)], to_add[_with1]:={}, (!to_return) ? to_return:=1
+			custom[group][_with1]:=[_with1], to_add[_with1]:={}, (!to_return) ? to_return:=1
 			if _with2 {
 			   Loop, parse, _with2, % A_Space . ","""
 			   {
@@ -737,18 +717,18 @@ lang(key:="",str:="",regex:=false,group:="langs",add:="",reset:=false) {
 							 break 2
 						  }
 					  } else {
-					     custom[group][_with1].Push(StrUnmark(A_LoopField))
+					     custom[group][_with1].Push(A_LoopField)
 					  }
 				   }
 			   }
 		    }
 		}
 	  }
-	  (!to_return) ? (unexpected:="Invalid Conector definition--->" . add)
-	  (!unexpected) ? (maps ? maps(group,to_add))
+	  to_return?(maps?maps(group,to_add):false):(unexpected:="Invalid Conector definition--->" . add)
 	  return to_return
    }
-   if (group="custom") {
+   if group=custom
+   {
        if custom.HasKey(key) {
 		   for keylang, value in custom[key]
 			  for cont, each_value in value
@@ -756,11 +736,6 @@ lang(key:="",str:="",regex:=false,group:="langs",add:="",reset:=false) {
 				    return keylang
 	   }
    } else if key {
-       if regex {
-	       for cont, each_value in %group%[key]
-			   (regex_list ? regex_list.="|" : false), regex_list.=each_value
-		   return regex_list
-	   }
 	   for cont, each_value in %group%[key]
 		  if (each_value=str)
 			 return 1
@@ -1009,7 +984,7 @@ solve_escape_string(ByRef str, Byref _result:="", ByRef _evaluated:="", Byref _h
 load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",newmain:=false,ResetEval:=true) {
    global unexpected,secure_user_info,config_tracking
    static IndentChar:=Chr(1),SpaceTAB:=A_Space . A_Tab,LineBreak:="`n",Delimiter:=Chr(34),Escape:=Chr(96),Deref:=Chr(4),last_label,main_nickname,script_section:={},FD:={1:new DObj({main: A_Args})},SIGNALME:={exit:1, def:{}},_thread:={},_escape:=[],_result:=[],_evaluated:=[],read_line_,ARGS,to_return
-   newmain?(last_label:="",FD_CURRENT:="",unexpected:="",main_nickname:="",script_section:={},GLOBAL:={},FD:={1:new DObj({main: A_Args})},SIGNALME:={exit:1, def:{}},_escape:=[],_result:=[],_evaluated:=[],_thread:={},lang(,,,,,true),maps(,,true),gui(,,true)):(is_parse:=(from_type="parse"))
+   newmain?(last_label:="",FD_CURRENT:="",unexpected:="",main_nickname:="",script_section:={},GLOBAL:={},FD:={1:new DObj({main: A_Args})},SIGNALME:={exit:1, def:{}},_escape:=[],_result:=[],_evaluated:=[],_thread:={},lang(,,,,true),maps(,,true),gui(,,true)):(is_parse:=(from_type="parse"))
    if is_parse {
        FD[from_fd].Parse(local_obj)
 	   return
@@ -1049,7 +1024,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 (script&&section) ? (script_section[section]:=script,script:="",section:="")
 		 (_def:=InStr(tag,"->")) ? (_cdef:=SubStr(tag,_def+2),tag:=SubStr(tag,1,_def-1))
 		 section:=(tag="main")?"":((tag~="^[a-zA-Z0-9_$]+$") ? tag : (unexpected:="Invalid tag--->" . tag))
-		 (_def&&tag&&!unexpected) ? (((_def:=lang(,,,tag,_cdef))&&(SIGNALME.def[tag]:=true)),(_def=2) ? main_nickname:=true) : false
+		 (_def&&tag&&!unexpected) ? (((_def:=lang(,,tag,_cdef))&&(SIGNALME.def[tag]:=true)),(_def=2) ? main_nickname:=true) : false
 		 if unexpected
 		    break
 	     else
@@ -1212,7 +1187,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			  Loop,parse,block_capture,`n
    			  {
 				if (_pos:=InStr(A_LoopField,IndentChar,false,1,2))&&(_case_indent=""||SubStr(A_LoopField,2,_pos-2)<=_case_indent) && (_endword:=WhileWord(A_LoopField,_pos+1)) {
-					if _key:=lang(,SubStr(A_LoopField,_pos+1,_endword-_pos),,"case")
+					if _key:=lang(,SubStr(A_LoopField,_pos+1,_endword-_pos),"case")
 					{
 						if _switch_pass
 						break
@@ -1241,7 +1216,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				case 1:
 					return,SIGNALME.exit
 				case 2:
-					return,(is_nested:=lang(,from_type,,"condition"))?to_return:Eval(to_return, FD,,_escape,_result,_evaluated,2), SIGNALME.code:=is_nested?SIGNALME.code:""
+					return,(is_nested:=lang(,from_type,"condition"))?to_return:Eval(to_return, FD,,_escape,_result,_evaluated,2), SIGNALME.code:=is_nested?SIGNALME.code:""
 				case 3:
 					if is_loop
 					SIGNALME.code:=""
@@ -1315,7 +1290,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 continue
 	  }
 	  is_partline?false:(read_line:=EscapeExpr(read_line,_result,,_hasexpr,_maxexpr), read_line:=EscapePercent(read_line,_evaluated,FD), read_line:=EscapeStr(read_line,Escape,_escape)), read_line_len:=StrLen(read_line), condition1:=(_endword:=WhileWord(read_line,1,read_line_len))?SubStr(read_line,1,_endword):""
-	  if (condition1&&block_key:=lang(,condition1,,"condition")) {
+	  if (condition1&&block_key:=lang(,condition1,"condition")) {
 		 block_capture:="", block_indent:=line_indent, block_type:=condition1, block_with:=SubStr(read_line,_endword+1), orig_block:=read_line2, orig_line:=line, back_label:=last_label, back_key:=block_key
 		 if (block_key="else") {
 			if (block_result="") {
@@ -1324,7 +1299,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			} else if !else_used {
 				block_with:=Trim(block_with,SpaceTAB)
 				if (block_with!="") {
-					if (condition1:=(_endword:=WhileWord(block_with))?SubStr(block_with,1,_endword):"") && (block_key:=lang(,condition1,,"condition"))
+					if (condition1:=(_endword:=WhileWord(block_with))?SubStr(block_with,1,_endword):"") && (block_key:=lang(,condition1,"condition"))
 						block_type:=condition1, block_with:=SubStr(block_with,_endword+1)
 					else {
 						unexpected:="Unrecognized conditional block type: " . condition1
@@ -1350,7 +1325,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 if (block_key="use") {
 			 solve_escape(block_with, _evaluated, "~")
 			 if RegExMatch(block_with,"(\S+)",block_with) {
-				if (block_with:=lang(,block_with,,"scripts")) {
+				if (block_with:=lang(,block_with,"scripts")) {
 				   block_result:=1
 				   if secure_user_info&&!question("ActiveScript", """" . block_with1 . """ code is going to be executed, do you want to allow it?`n`nNOTE: This code will not have a security check, be careful")
 					  block_result:=0
@@ -1370,8 +1345,8 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 } else if !with_partial {
 			continue
 		 }
-	  } else if (condition1&&lang(,condition1,,"return"))
-	  	return,(from_type&&lang(,from_type,,"condition")&&SIGNALME.code:=2)?SubStr(read_line,_endword+1):Eval(SubStr(read_line,_endword+1), FD,,_escape,_result,_evaluated,2)
+	  } else if (condition1&&lang(,condition1,"return"))
+	  	return,(from_type&&lang(,from_type,"condition")&&SIGNALME.code:=2)?SubStr(read_line,_endword+1):Eval(SubStr(read_line,_endword+1), FD,,_escape,_result,_evaluated,2)
 	  if _hasexpr&&!(with_partial="for"||with_partial="forobj") {
 		_resulttmp:=_result,_evaluatedtmp:=_evaluated,_escapetmp:=_escape,_result:=[],_evaluated:=[]
 		while,(_hasexpr<=_maxexpr)
@@ -1406,7 +1381,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 					break 2
 					continue 2
 				} else {
-					(main_nickname&&_try:=lang(,option,,"custom_main")) ? option:=_try
+					(main_nickname&&_try:=lang(,option,"custom_main")) ? option:=_try
 					main_action:=(main_type:=script_section.HasKey(option) ? "section" : (isFunc(option)?"function":""))?option:lang(,option)
 					main_type:=(main_type="")?((main_action="")?"":(isFunc(main_action)?"function":"lang")):main_type
 					if main_type {
@@ -1417,7 +1392,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 					}
 				}
 			}
-			if (A_Index=1)||(force_literal=3)||(_isstr:=(_chrfound=Delimiter))||(_literal:=(_chrfound="``")?"$":"")||(_number:=(isNumber(SubStr(option,1,2))))||(force_literal=2)||(_isexpr:=(_chrfound="%"))||(custom_option&&option:=lang(main_action,option,,"custom"))||(option:=lang(,_token,,"connectors"))||always_literal||(unexpected:=(_token=")")?"Closing -> ')' without opening -> '('":"")||(_isvar:=FD[outfd].HasKey(_token))||(_expand:=(SubStr(_token,0)="*"))
+			if (A_Index=1)||(force_literal=3)||(_isstr:=(_chrfound=Delimiter))||(_literal:=(_chrfound="``")?"$":"")||(_number:=(isNumber(SubStr(option,1,2))))||(force_literal=2)||(_isexpr:=(_chrfound="%"))||(custom_option&&option:=lang(main_action,option,"custom"))||(option:=lang(,_token,"connectors"))||always_literal||(unexpected:=(_token=")")?"Closing -> ')' without opening -> '('":"")||(_isvar:=FD[outfd].HasKey(_token))||(_expand:=(SubStr(_token,0)="*"))
 			{
 				if unexpected
 				break 2
@@ -1576,9 +1551,9 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 				return 0
 		   case "exit":
 				last_label ? SIGNALME[outfd].from:=last_label
-				if lang("all",read_line_.exit.1,,"signal") {
+				if lang("all",read_line_.exit.1,"signal") {
 				   SIGNALME.code:=1.1
-				} else if lang("main",read_line_.exit.1,,"signal") {
+				} else if lang("main",read_line_.exit.1,"signal") {
 				   SIGNALME.code:=1.2
 				} else {
 				   SIGNALME.code:=1
@@ -1644,7 +1619,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		   SIGNALME.unexpected:={unexpected: unexpected, last_label: "", to_show: last_label ? "Error in expression from--->" . last_label : "Line: " . line . "--in---> Expression", main_orig: main_orig, read_line2: solve_escape(solve_escape(solve_escape(read_line2, _escape), _result, "``"), _evaluated, "~")}
 		else if (from_type&&InStr(from_type,"import:"))
 		   SIGNALME.unexpected:={unexpected: unexpected, to_show: "Error in line: " . line . "`nFile: " RegExReplace(SubStr(from_type,InStr(from_type,":")), ".*\\([^\\]+)$", "$1"), main_orig: main_orig, read_line2: read_line2, show_error: true}
-		else if lang(,from_type,,"condition")
+		else if lang(,from_type,"condition")
 		   SIGNALME.unexpected:={unexpected: unexpected, line: line . "--from---> " . from_type, main_orig: main_orig, read_line2: read_line2, show_error: true}
 		else
 	       SIGNALME.unexpected:={unexpected: unexpected, last_label: last_label, line: line, main_orig: main_orig, read_line2: read_line2, show_error: true}
