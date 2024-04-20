@@ -21,10 +21,7 @@
 ;
 ;	OnError("RuntimeError"):
 ;                 A safe to display an Error message at runtime, since it is possible to overload AHK during the evaluation of long expressions.
-;
-;   ConfigRC:
-;                 A function to define native DinoCode variables
-;                   (Customizable according to needs).
+
 ;
 ;   Extra functions:
 ;                 print:              This function must be modified to coexist with the main program
@@ -67,7 +64,7 @@
 ;=======================================================================================
 ; SECURITY RESTRICTIONS
 ; 
-; -> By default, any variables defined in AHK, including native variables (A_) are accessible but NOT modifiable
+; -> By default, any global variables defined in AHK, including native variables (A_) are accessible but NOT modifiable
 ;      It is possible to "change" its value but it will never affect the AHK variable, it will simply be self-defined within DinoCode
 ;
 ; -> If they are global objects, they may be modified, since they are resolved from the original object.
@@ -94,49 +91,38 @@ SetBatchLines -1
 ; Definitions
 global GLOBAL:={}, unexpected, FD_CURRENT, verdadero:=true, falso:=false
 OnError("RuntimeError")
-OnMessage(KeyDown:=0x100, "__DinoEvent__")
 
-; ConfigRC
-config_rc() {
-   ; Native
-   ; Currently a global definition as AHK variables for constants is preferred
-   ; Removed:   GLOBAL.false:=0, GLOBAL.true:=1, GLOBAL.verdadero:=1, GLOBAL.falso:=0
-}
+; ConfigRC: Deprecated, was removed
+;			  If you want to declare additional Local Variables, simply send them as an Object in the local_obj parameter of load_config + from_type defined in "parse"
+;			    1. It is ignored if the environment is also being reset (newmain = true)
+;               2. If you are also creating a new local space, it is NOT necessary to use from_type = "parse", because by default local_obj is always included in new local spaces.
+;               3. Any attempt to also execute code with from_type = "parse" will be ignored
+;
+;			  -> load_config(,,{Var:Value, Var2:Value},FD_CURRENT,"parse")
 
-; Event control
-__DinoEvent__(wParam, lParam, msg, hwnd) {
-	static Enter:=0x0D
-	if (wParam=Enter)&&(gui:=(A_Gui="new"||A_Gui="new2"||A_Gui="new3") ?  A_Gui : false) {
-	   Gui, % gui ":Submit", NoHide
-       Gui, % gui ":Destroy"
-	}
-	return 
-}
 __DinoGui__(Hwnd,GuiEvent,EventInfo,ErrLevel:="")
 {
-    GuiControlGet, _var, % A_Gui ":Name", % Hwnd
-	_var ? gui(,_var)
+    GuiControlGet, _var, % A_Gui . ":Name", % Hwnd
+	_var?gui(,_var)
 }
 
 ; Moved to console.ahk
 
 ; Extra functions
-WaitWindow(id, HiddenWindows:=false) {
+WaitWindow(id:="", HiddenWindows:=false) {
    DetectHiddenWindows, % HiddenWindows
    WinWaitClose % id
    return ErrorLevel
 }
-WinMaximize(id) {
+WinMaximize(id:="") {
 	WinMaximize, % id
 }
 new(opt*) {
 	class:=opt[1], opt.RemoveAt(1)
 	if (class&&IsObject(%class%)) {
-	   try {	
-			return new %class%(opt*)
-	   } catch {
-			unexpected:="Could not generate object with class -> " . class
-	   }
+	   try return new %class%(opt*)
+	   catch
+	   unexpected:="Could not generate object with class -> " . class
 	} else {
 		unexpected:="Invalid class name -> " . class
 	}
@@ -255,154 +241,145 @@ GuiControlGet(do) {
 	Gui(,,,,do)
 }
 Gui(do:="",onevent:="",reset:=false,control:="",controlget:="") {
-   static
-   local args:=0, _label, _var, _random
-   (reset||!isObject(labels)) ? (labels:={},vars:=[])
-   if do {
-	   do:=StrSplit(do,",",,4), args:=do.MaxIndex()
-	   for cont, value in do
-		  do[cont]:=Trim(value)
-	   try {
-		   StringCaseSense, Off
-		   if (args=1) {
-			  if (_at:=InStr(do[1],"return"))&&(_return:=Trim(SubStr(do[1],_at+6)))
-				 return _return:=%_return%
-		   }
-		   if (args>=3) && InStr(do[1],"Add") {
-		      RegexMatch(do[3],"v\K\S+",_var) ? (GLOBAL[_var]:="",vars.Push(_var))
-			  if RegexMatch(do[3],"g\S+",_label) {
-			     if !_var {
-				    Random, _random, 1, 1000
-				    _var:="_v" . _random . "v_", do[3].=" v" . _var
-                 }
-				 do[3]:=StrReplace(do[3],_label,"g__DinoGui__",, 1), labels[_var]:=SubStr(_label,2)
-			  }
-			  is_control:=true
-		   }
-		   Gui, % do[1], % do[2], % do[3], % do[4]
-		   (is_control&&RegexMatch(do[3],"hwnd\K\S+",_var)) ? (GLOBAL[_var]:=%_var%)
-		   if InStr(do[1],"submit")
-		      for cont, value in vars
-                  GLOBAL[value]:=%value%, %value%:=""
-	   } catch e {
-		   unexpected:=e.message
-	   }
-   } else if onevent && labels.HasKey(onevent){
-       load_config(labels[onevent],,, FD_CURRENT, "resolveblock")
-   } else if control {
+	static
+	local args:=0, _label, _var, _random
+	(reset||!SpaceTAB) ? (labels:={},SpaceTAB:=A_Space . A_Tab)
+	if (do!="") {
+		do:=StrSplit(do,",",,4), args:=do.MaxIndex()
+		for cont, value in do
+			do[cont]:=Trim(value,SpaceTAB)
+		try {
+			StringCaseSense, Off
+			if (args=1)&&(_word:=WhileWord(do.1)) {
+				switch SubStr(do.1,1,_word)
+				{
+					case "return":
+						try return,(_var:=Trim(SubStr(do.1,_word+1),SpaceTAB))?(%_var%):""
+						catch {
+							unexpected:="Invalid variable name -> " . _var
+							return
+						}
+					case "reset":
+						labels:={}
+						return
+				}
+			}
+			if (args>=3)&&InStr(do.1,"Add") {
+				if ((_at:=InStr(do.3,"g",true))&&(_word:=WhileWord(do.3,_at))) {
+					_label:=SubStr(do.3,_at+1,_word-_at)
+					if ((_at:=InStr(do.3,"v",true))&&(_word:=WhileWord(do.3,_at)))
+						_var:=SubStr(do.3,_at+1,_word-_at)
+					else {
+						Random, _random, 1, 1000
+						_var:="_v" . _random . "v_", do.3.=" v" . _var
+					}
+					do.3:=StrReplace(do.3,"g" . _label,"g__DinoGui__",,1), labels[_var]:=_label
+				}
+			}
+			Gui, % do.1, % do.2, % do.3, % do.4
+			return (ErrorLevel=0)
+		} catch e
+		unexpected:=e.message
+	} else if (onevent!="") {
+		load_config(labels[onevent],,, FD_CURRENT, "resolveblock")
+	} else if (control!="") {
 		do:=StrSplit(control,",",,3)
 		for cont, value in do
-			do[cont]:=Trim(value)
-		try {
-			GuiControl, % do[1], % do[2], % do[3]
-		} catch e {
-			unexpected:=e.message
-		}
-   } else if controlget {
-	    do:=StrSplit(controlget,",",,4)
+			do[cont]:=Trim(value,SpaceTAB)
+		try GuiControl, % do.1, % do.2, % do.3
+		catch e
+		unexpected:=e.message
+		return (ErrorLevel=0)
+	} else if (controlget!="") {
+		do:=StrSplit(controlget,",",,4), ParseObj:={}
 		for cont, value in do
-			do[cont]:=Trim(value)
+			do[cont]:=Trim(value,SpaceTAB)
 		try {
-			GuiControlGet, _OutputVar, % do[2], % do[3], % do[4]
-			if InStr(do[2],"Pos") {
-               GLOBAL[do.1 . "X"]:=_OutputVarX, GLOBAL[do.1 . "Y"]:=_OutputVarY, GLOBAL[do.1 . "W"]:=_OutputVarW, GLOBAL[do.1 . "H"]:=_OutputVarH
+			GuiControlGet, _OutputVar, % do.2, % do.3, % do.4
+			if (ErrorLevel=0) {
+				if InStr(do.2,"Pos")
+				ParseObj[do.1 . "X"]:=_OutputVarX, ParseObj[do.1 . "Y"]:=_OutputVarY, ParseObj[do.1 . "W"]:=_OutputVarW, ParseObj[do.1 . "H"]:=_OutputVarH
+				else
+				ParseObj[do.1]:=_OutputVar
+				load_config(,,ParseObj,FD_CURRENT,"parse")
+				return 1
 			} else {
-               GLOBAL[do.1]:=_OutputVar
+				return 0
 			}
 		} catch e {
 			unexpected:=e.message
 		}
-   }
-   return
+	}
 }
-option(title,txt,options*) {
+newGuiSize() {
+   static w,h
+   w:=A_GuiWidth?A_GuiWidth:w,h:=A_GuiHeight?A_GuiHeight:h
+   return {w:w,h:h}
+}
+newGuiClose() {
+   Gui new: Submit, NoHide
+   Gui new: Destroy
+}
+__dinookay__() {
+	newGuiClose()
+}
+option(title:="",txt:="",options*) {
    static multi, okay
-   (!title) ? title:="Option"
+   title:=(title="")?"Option":title
    Gui new: +AlwaysOnTop
    Gui new: Font, s10
-   if txt
+   if (txt!="")
       Gui new: Add, Text, Y+0, % txt
    for count, value in options {
-       if (count=1)
+       if count=1
 	      Gui new: Add, Radio, AltSubmit vmulti XP Y+10, % value
 	   else
           Gui new: Add, Radio, , % value
    }
-   Gui new: Add, Button, XS Y+10 h20 w100 vokay gokay, OK
+   Gui new: Add, Button, XS Y+10 h20 w100 vokay g__dinookay__ default, OK
    Gui new: Show, AutoSize Center, % title
+   wh:=newGuiSize(), okay_x:=(wh.w-100)//2, okay_y:=(wh.h-20)//2
    GuiControl, new: Move, okay, x%okay_x%
    Gui new: +LastFound
    WinWaitClose
    return multi
-   newGuiClose:
-   okay:
-   Gui new: Submit, NoHide
-   Gui new: Destroy
-   return
-   newGuiSize:
-   okay_x:=(A_GuiWidth - 100) // 2
-   okay_y:=(A_GuiHeight - 20) // 2
-   return
+}
+multicheck(title:="",txt:="",options*) {
+    static
+	local count, value, wh, okay_x, okay_y, result
+    title:=(title="")?"MultiOption":title
+    Gui, new: +AlwaysOnTop
+    Gui, new: Font, s10
+    if (txt!="")
+        Gui, new: Add, Text, y+0, % txt
+    for count, value in options
+        Gui, new: Add, Checkbox, vCheck%count%, % value
+    Gui, new: Add, Button, XS y+10 h20 w100 vokay g__dinookay__ default, OK
+    Gui, new: Show, AutoSize Center, % title
+    wh:=newGuiSize(), okay_x:=(wh.w-100)//2, okay_y:=(wh.h-20)//2
+    GuiControl, new: Move, okay, x%okay_x%
+    Gui, new: +LastFound
+    WinWaitClose
+    result:=[]
+    Loop % options.MaxIndex()
+        result.Push(Check%A_Index%)
+    return result
 }
 input(txt:="",w:="",h:=""){
-   Static input, okay2, create:=true
-   (!(h~="[0-9]+")) ? h:=20
-   if (w~="[0-9]+") {
-      w:="w" . w
-   } else if !txt {
-      w:="w300"
-   } else {
-      w:="WP"
-	  (StrLen(txt)<30) ? w:=w . "+60"
-   }
-   Gui new2: -MinimizeBox +AlwaysOnTop
-   Gui new2: Font, s10
-   if txt
-      Gui new2: Add, Text, Y+0, % txt
-   Gui new2: Add, Edit, % "XS Y+10 " . w . " h" . h . " vinput",
-   Gui new2: Add, Button, XS Y+10 h20 w100 vokay2 gokay2, OK
-   Gui new2: Show, AutoSize Center, Input
-   GuiControl, new2: Move, okay2, x%okay_x%
-   Gui new2: +LastFound
+   Static input, okay
+   h:=isNumber(h)?h:20, w:=isNumber(w)?"w" . w:((txt="")?"w300":("WP" . ((StrLen(txt)<30)?"+60":"")))
+   Gui new: -MinimizeBox +AlwaysOnTop
+   Gui new: Font, s10
+   if (txt!="")
+      Gui new: Add, Text, Y+0, % txt
+   Gui new: Add, Edit, % "XS Y+10 " . w . " h" . h . " vinput",
+   Gui new: Add, Button, XS Y+10 h20 w100 vokay g__dinookay__ default, OK
+   Gui new: Show, AutoSize Center, Input
+   wh:=newGuiSize(), okay_x:=(wh.w-100)//2, okay_y:=(wh.h-20)//2
+   GuiControl, new: Move, okay, x%okay_x%
+   Gui new: +LastFound
    WinWaitClose
-   Gui new2: Destroy
    return input
-   new2GuiClose:
-   okay2:
-   Gui new2: Submit, NoHide
-   Gui new2: Destroy
-   return
-   new2GuiSize:
-   okay_x:=(A_GuiWidth - 100) // 2
-   okay_y:=(A_GuiHeight - 20) // 2
-   return
-}
-help(image:="",txt:="") {
-   static okay3, pic
-   if image&&!InStr(FileExist(image), "A")
-      return 0
-   Gui new3: -MinimizeBox +AlwaysOnTop
-   Gui new3: Font, s10
-   if txt
-      Gui new3: Add, Text, Y+0, % txt
-   if image
-      Gui new3: Add, Picture, XS Y+10 vpic, % image
-   Gui new3: Add, Button, center XS Y+10 h20 w100 vokay3 gokay3, OK
-   Gui new3: Show, AutoSize Center, HELP
-   GuiControl, new3: Move, okay3, % "x" . (guiw - 100) // 2
-   if image {
-      GuiControlGet, size, new3: Pos, pic
-      GuiControl, new3: Move, pic, % "x" . (guiw - sizeW) // 2
-   }
-   Gui new3: +LastFound
-   WinWaitClose
-   okay3:
-   Gui new3: Destroy
-   return
-   new3GuiSize:
-   guiw:=A_GuiWidth
-   guih:=A_GuiHeight
-   return
 }
 GetFullPathName(path) {
    cc := DllCall("GetFullPathName", "str", path, "uint", 0, "ptr", 0, "ptr", 0, "uint")
@@ -467,7 +444,7 @@ simplename(str, fullpath := true) {
    return Name
 }
 Exist(options*) {
-    type:=(options[1]="file"||options[1]="folder"||options[1]="hidden")?options.RemoveAt(1):""
+    type:=(options.1="file"||options.1="folder"||options.1="hidden")?options.RemoveAt(1):""
     for count, path in options
     {
         filetype:=FileExist(path)
@@ -816,6 +793,7 @@ maps(key:="",add:="",reset:=false) {
 		     msg: {msg: {max:2, at:"1,2", atpos:true}, with: {support:true, max:1, at:3}},
 			 question: {question: {max:1, at:1, atpos:true}, with: {support:true, max:1, at:2}},
              option: {option: {max:2, at:"1,2", atpos:true}, with: {support:true, expand:true, at:3}},
+			 multicheck: {multicheck: {max:2, at:"1,2", atpos:true}, with: {support:true, expand:true, at:3}},
 			 gui: {gui: {literal:true, max:1}},
 			 escape: {escape: {literal:true, max:1}},
 			 eval: {eval: {literal:true, max:1, ignore_func:true}},
@@ -1030,13 +1008,16 @@ solve_escape_string(ByRef str, Byref _result:="", ByRef _evaluated:="", Byref _h
 }
 load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",newmain:=false,ResetEval:=true) {
    global unexpected,secure_user_info,config_tracking
-   static IndentChar:=Chr(1),SpaceTAB:=A_Space . A_Tab,LineBreak:="`n",Delimiter:=Chr(34),Escape:=Chr(96),Deref:=Chr(4),last_label,main_nickname,script_section,FD,SIGNALME,_thread,_escape,_result,_evaluated,read_line_,ARGS,to_return
-   (newmain||!isObject(FD)) ? (last_label:="",FD_CURRENT:="",unexpected:="",main_nickname:="",script_section:={},GLOBAL:={},FD:={1:new DObj({main: A_Args})},SIGNALME:={exit:1, def:{}},_escape:=[],_result:=[],_evaluated:=[],_thread:={},lang(,,,,,true),maps(,,true),gui(,,true),config_rc())
-   if configstr {
-	   local ? (outfd:=FD.MaxIndex()+1, FD[outfd]:=new DObj(local_obj), last_label ? SIGNALME.main:={[outfd]: last_label}) : (FD.HasKey(from_fd) ? (outfd:=from_fd, FD[outfd].Parse(local_obj)) : outfd:=1)
+   static IndentChar:=Chr(1),SpaceTAB:=A_Space . A_Tab,LineBreak:="`n",Delimiter:=Chr(34),Escape:=Chr(96),Deref:=Chr(4),last_label,main_nickname,script_section:={},FD:={1:new DObj({main: A_Args})},SIGNALME:={exit:1, def:{}},_thread:={},_escape:=[],_result:=[],_evaluated:=[],read_line_,ARGS,to_return
+   newmain?(last_label:="",FD_CURRENT:="",unexpected:="",main_nickname:="",script_section:={},GLOBAL:={},FD:={1:new DObj({main: A_Args})},SIGNALME:={exit:1, def:{}},_escape:=[],_result:=[],_evaluated:=[],_thread:={},lang(,,,,,true),maps(,,true),gui(,,true)):(is_parse:=(from_type="parse"))
+   if is_parse {
+       FD[from_fd].Parse(local_obj)
+	   return
+   } else if configstr {
+	   local?(outfd:=FD.MaxIndex()+1, FD[outfd]:=new DObj(local_obj), last_label?SIGNALME.main:={[outfd]:last_label}):(outfd:=FD.HasKey(from_fd)?from_fd:1)
 	   if (outfd>=100) {
 	      MsgBox, 262160, Config File, % "Memory limit exceeded for local recursive calls (" . outfd . ")"
-	      SIGNALME.code:=1.1, SIGNALME.exit:=0, FD:=""
+	      SIGNALME.code:=1.1, SIGNALME.exit:=0, FD:={1:new DObj({main: A_Args})}
 	      return 0
 	   }
 	   StringCaseSense, Off
@@ -1044,9 +1025,8 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 	   if !(is_partline||is_callout)
 	   while,_pos:=InStr(configstr,LineBreak,false,_pos+1)
 	   total++
-   } else {
-      return 0
-   }
+   } else
+   return 0
    Loop,parse,configstr,`n,`r 
    {
       line+=1

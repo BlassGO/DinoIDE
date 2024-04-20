@@ -70,3 +70,4 @@ ExplorerSelect
 Cmd
 Enable_print
 Disable_print
+MultiCheck
