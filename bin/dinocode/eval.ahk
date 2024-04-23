@@ -31,7 +31,10 @@ ExprInit()
 
 Eval(str, Byref FD := "", Byref _Objects:="", Byref _escape:="", Byref _result:="", ByRef _evaluated:="", _action:=0, Byref _hasexpr:=0)
 {
-	Static $Quote:=Chr(2), c1:=Chr(1), Deref:=Chr(4)
+	Static $Quote:=Chr(2), c1:=Chr(1), Deref:=Chr(4), $RE:=Chr(96), $Hash:=Chr(35)
+	; If it is a number, avoid unnecessary expression compilation
+	if str is number
+	return,(_action>=2)?str:[str]
 	; Evaluate parsed expression with ExprEval()
 	$Result:=ExprEval((_action=4||_action=-1)?str:ExprCompile(str,_Objects), FD, _Objects, _escape, _result, _evaluated, _action, _hasexpr)
 	if $Result=
@@ -41,32 +44,32 @@ Eval(str, Byref FD := "", Byref _Objects:="", Byref _escape:="", Byref _result:=
 		if (_action=2||_action=4) {
 			; Restore object references
 			if (SubStr($Result,1,1)=Deref)&&(_end:=InStr($Result,Deref,2)) {
-				switch (SubStr($Result, 2, 1))
+				switch SubStr($Result,2,1)
 				{
-					case "#":
-						return FD[FD_CURRENT][SubStr($Result, 3, -2)]
-					case "``":
-						return _result[SubStr($Result, 3, -2)]
+					case $Hash:
+						return FD[FD_CURRENT][SubStr($Result,3,-2)]
+					case $RE:
+						return _result[SubStr($Result,3,-2)]
 				}
 			}
 		}
-		return $Result
+		return,$Result
 	} else {
-		$Result:=StrSplit($Result, c1)
+		$Result:=StrSplit($Result,c1)
 		; Restore object references
 		For _i, _v in $Result
 		{
 			if (SubStr(_v,1,1)=Deref)&&(_end:=InStr(_v,Deref,2)) {
-				switch (SubStr(_v, 2, 1))
+				switch SubStr(_v,2,1)
 				{
-					case "#":
-						$Result[_i]:=FD[FD_CURRENT][SubStr(_v, 3, -2)]
-					case "``":
-						$Result[_i]:=_result[SubStr(_v, 3, -2)]
+					case $Hash:
+						$Result[_i]:=FD[FD_CURRENT][SubStr(_v,3,-2)]
+					case $RE:
+						$Result[_i]:=_result[SubStr(_v,3,-2)]
 				}
 			}
 		}
-		return $Result
+		return,$Result
 	}
 }
 
@@ -222,11 +225,22 @@ EnclosingExpr(ByRef s, p, b="$(", e=")", len:=0) {
     }
     return,(bc=0)?p:0
 }
+GetWord(Byref s,w,p:=1,len:=0,casesense:=false) {
+	len:=len?len:StrLen(s)
+	return,(_at:=StartOfWord(s,w,p,casesense))?SubStr(s,_at,WhileWord(s,_at,len)-_at+1):""
+}
+StartOfWord(Byref s,w,p:=1,casesense:=false) {
+	len:=StrLen(w)
+	Loop
+	p:=InStr(s,w,casesense,p)
+	Until,p=0||p=1||((_char:=SubStr(s,p-1,1))=A_Space||_char=A_Tab)||p+=len
+	return,p
+}
 WhileWord(ByRef s, p:=1, len:=0) {
     p:=p?p:1, len:=len?len:StrLen(s)
 	while,p<=len&&((_char:=SubStr(s,p,1))!=A_Space&&_char!=A_Tab)
 	p+=1,word:=true
-	return,(word)?p-1:0
+	return,word?p-1:0
 }
 GetIndent(ByRef s, Byref p:=1) {
     p:=p?p:1, indent:=0
@@ -234,9 +248,9 @@ GetIndent(ByRef s, Byref p:=1) {
 	p+=1,indent+=(_char=A_Tab)?4:1
 	return,indent
 }
-WhileWordBack(ByRef s, p:="", len:=0) {
+WhileWordBack(ByRef s, p:=0, len:=0) {
 	static Chars:="_,$"
-    p:=(p="")?0:p, len:=len?len:StrLen(s)
+    p:=p?p:0, len:=len?len:StrLen(s)
     while,p>0&&((_char:=SubStr(s,p,1))!=A_Space&&_char!=A_Tab) {
 		if _char in %Chars%
         word:=true
@@ -296,7 +310,7 @@ ExprInit()
 
 ExprCompile(Byref e, Byref objs:="", format:=true)
 {
-	static c1:=Chr(1)
+	static c1:=Chr(1),$L:="L",$R:="R"
 	format?(objs:=[],e:=Exprt(e,objs))
 	Loop,Parse,e,%c1%
 	{
@@ -311,7 +325,7 @@ ExprCompile(Byref e, Byref objs:="", format:=true)
 			While,SubStr(so:=Exprp3(s),1,1)="o"
 			{
 				ta:=Expras(to),tp:=Exprpr(to),sop:=Exprpr(SubStr(so,2))
-				If ((ta="L"&&tp>sop)||(ta="R"&&tp>=sop))
+				If ((ta=$L&&tp>sop)||(ta=$R&&tp>=sop))
 				Break
 				Exprp1(ou,Exprp2(s))
 			}
@@ -330,10 +344,10 @@ ExprCompile(Byref e, Byref objs:="", format:=true)
 }
 ExprEval(Byref e,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, _action:=0, Byref _hasexpr:=0)
 {
-	static c1:=Chr(1), Deref:=Chr(4)
+	static c1:=Chr(1),Deref:=Chr(4),$v:="v",$HashL:=Chr(4) . Chr(35), $HashR:=Chr(35) . Chr(4)
 	Loop,Parse,e,%c1%
 	{
-		lf:=A_LoopField,tt:=SubStr(lf,1,1),t:=SubStr(lf,2),InStr(lf,Deref)?(lf:=solve_any_escape(lf,esc,re,eva,_hasexpr)) : false
+		lf:=A_LoopField,tt:=SubStr(lf,1,1),t:=SubStr(lf,2),InStr(lf,Deref)?(lf:=solve_any_escape(lf,esc,re,eva,_hasexpr))
 		If tt In l,v
 		lf:=Exprp1(s,lf)
 		Else{
@@ -347,8 +361,8 @@ ExprEval(Byref e,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, _action:=
 	Loop,Parse,s,%c1%
 	{
 		lf:=A_LoopField
-		If (SubStr(lf,1,1)="v")
-		t1:=SubStr(lf,2),r.=(isObject(lp[FD_CURRENT][t1])?Deref . "#" . t1 . "#" . Deref:lp[FD_CURRENT][t1]) . c1
+		If (SubStr(lf,1,1)=$v)
+		t1:=SubStr(lf,2),r.=(isObject(lp[FD_CURRENT][t1])?$HashL . t1 . $HashR:lp[FD_CURRENT][t1]) . c1
 		Else r.=SubStr(lf,2) . c1
 	}
 	Return,SubStr(r,1,-1)
@@ -418,17 +432,17 @@ ExprEval(Byref e,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, _action:=
 Exprap(o,ByRef s,ac,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, Byref stop:=false, _action:=0, Byref _hasexpr:=0)
 {
 	local i,t1,a1,a2,a1v,a2v,r1,r2,r3
-	static DerefEL:=Chr(4) . Chr(96),DerefER:=Chr(96) . Chr(4) , c1:=Chr(1), $SC:=Chr(59)
+	static DerefEL:=Chr(4) . Chr(96),DerefER:=Chr(96) . Chr(4) , c1:=Chr(1), $SC:=Chr(59), $v:="v", $l:="l",$resolve:="resolve"
 	Loop,%ac%
-	i:=ac-(A_Index-1),t1:=Exprp2(s),a%i%:=SubStr(t1,2), (SubStr(t1,1,1)="v")?(a%i%v:=1)
+	i:=ac-(A_Index-1),t1:=Exprp2(s),a%i%:=SubStr(t1,2),(SubStr(t1,1,1)=$v)?(a%i%v:=1)
 	r2:=SubStr(o,1,1)
 	If r2=r
 	{
 		r2:=SubStr(o,2)
 		If (r2<=_hasexpr)
-		Return,"l" . (IsObject(re[r2])?"l" . DerefEL . r2 . DerefER:re[r2])
+		Return,$l . (IsObject(re[r2])?$l . DerefEL . r2 . DerefER:re[r2])
 		Else
-		r1:=load_config(re[r2],,,FD_CURRENT,"resolve",,false), _hasexpr+=1
+		r1:=load_config(re[r2],,,FD_CURRENT,$resolve,,false), _hasexpr+=1
 	} Else If r2=o
 	r1:=ParseObjects(objs[SubStr(o,2)], lp,,,esc,re,eva,_hasexpr)
 	Else if r2=p
@@ -436,79 +450,79 @@ Exprap(o,ByRef s,ac,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, Byref 
 	Else if r2=f
 	r3:=InStr(o,$SC), r2:=SubStr(o,2,r3-2),r1:=IsFunc(r2)?((skip_functions&&r2~=skip_functions)?"":%r2%(EvalLocal(objs[SubStr(o,r3+1)],lp,objs,esc,re,eva,-1,_hasexpr)*)):((unexpected:="Unrecognized function name: " . r2)?"":"")
 	If o=++
-	Return,"l" . lp[FD_CURRENT][a1]++
+	Return,$l . lp[FD_CURRENT][a1]++
 	If o=--
-	Return,"l" . lp[FD_CURRENT][a1]--
+	Return,$l . lp[FD_CURRENT][a1]--
 	If o=\++
-	Return,"l" . ++lp[FD_CURRENT][a1]
+	Return,$l . ++lp[FD_CURRENT][a1]
 	If o=\--
-	Return,"l" . --lp[FD_CURRENT][a1]
+	Return,$l . --lp[FD_CURRENT][a1]
 	If o=!
-	Return,"l" . !(a1v ? lp[FD_CURRENT][a1]:a1)
+	Return,$l . !(a1v ? lp[FD_CURRENT][a1]:a1)
 	If o=\!
-	Return,"l" . (a1v ? lp[FD_CURRENT][a1]:a1)
+	Return,$l . (a1v ? lp[FD_CURRENT][a1]:a1)
 	If o=~
-	Return,"l" . ~(a1v ? lp[FD_CURRENT][a1]:a1)
+	Return,$l . ~(a1v ? lp[FD_CURRENT][a1]:a1)
 	If o=**
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)**(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)**(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=*
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)*(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)*(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=\*
-	Return,"l" . *(a1v ? lp[FD_CURRENT][a1]:a1)
+	Return,$l . *(a1v ? lp[FD_CURRENT][a1]:a1)
 	If o=/
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)/(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)/(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=//
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)//(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)//(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=+
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)+(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)+(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=-
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)-(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)-(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=\-
-	Return,"l" . -(a1v ? lp[FD_CURRENT][a1]:a1)
+	Return,$l . -(a1v ? lp[FD_CURRENT][a1]:a1)
 	If o=<<
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)<<(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)<<(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=>>
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)>>(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)>>(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=&
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)&(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)&(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=\&
-	Return,"l" . &(a1v ? lp[FD_CURRENT][a1]:a1)
+	Return,$l . &(a1v ? lp[FD_CURRENT][a1]:a1)
 	If o=^
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)^(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)^(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=|
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)|(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)|(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=\.
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1) . (a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1) . (a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=.
-	Return,"v" . a1
+	Return,$v . a1
 	If o=<
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)<(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)<(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=>
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)>(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)>(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o==
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)=(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)=(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o===
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)==(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)==(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=<>
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)<>(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)<>(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=~=
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)~=(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)~=(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=!=
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)!=(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)!=(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=>=
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)>=(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)>=(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=<=
-	Return,"l" . ((a1v ? lp[FD_CURRENT][a1]:a1)<=(a2v ? lp[FD_CURRENT][a2]:a2))
+	Return,$l . ((a1v ? lp[FD_CURRENT][a1]:a1)<=(a2v ? lp[FD_CURRENT][a2]:a2))
 	If o=&&
-	Return,"l" . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)&&(a2v ? lp[FD_CURRENT][a2]:a2))), stop:=!stop
+	Return,$l . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)&&(a2v ? lp[FD_CURRENT][a2]:a2))), stop:=!stop
 	If o=||
-	Return,"l" . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)||(a2v ? lp[FD_CURRENT][a2]:a2)))
+	Return,$l . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)||(a2v ? lp[FD_CURRENT][a2]:a2)))
 	If IsObject(r1)
 	{
 		re.Push(r1)
-		Return,"l" . DerefEL . re.MaxIndex() . DerefER
+		Return,$l . DerefEL . re.MaxIndex() . DerefER
 	} Else
-	Return,"l" . r1
+	Return,$l . r1
 }
 /*
 SetFormat,IntegerFast,Hex
@@ -556,7 +570,7 @@ Exprpa(e, Byref objs) {
 Exprt(e, Byref objs:="")
 {
 	global Exprol
-	static c1:=Chr(1), c1_2:=Chr(1) . Chr(1), $Quote=Chr(34), $Apos:=Chr(39), $Apos27:="'27"
+	static c1:=Chr(1), c1_2:=Chr(1) . Chr(1), $Quote=Chr(34), $Apos:=Chr(39), $Apos27:="'27", $l:="l", $n:="n", $do:="do", $dr:="dr"
 	, $Space4:="    ", $Dot:=Chr(46), $Concat:=" . ", $ConcatRpl:="\.", $Comma:=Chr(44), $CommaRpl:=Chr(1) . Chr(44) . Chr(1), $C1N:=Chr(1) . "n", $C1L:=Chr(1) . "l", $2E:="'2E", $Not:="!", $And:="&&", $Or:="||"
 	, $Regex1:="iS)[^\w']"
 	, $Regex2:="S)([\w#@\$\x04] +|\) *)(?=" . Chr(1) . "*[\w#@\$\(]|\x04)"
@@ -598,7 +612,7 @@ Exprt(e, Byref objs:="")
 		While,RegExMatch(t1,$Regex1,c)
 		t1:=StrReplace(t1,c,$Apos . SubStr("0" . SubStr(Asc(c),3),-1))
 		SetFormat,IntegerFast,D
-		e1.=SubStr(e,f1,_pos-f1) . c1 . "l" . t1 . c1,f1:=_pos+_extra
+		e1.=SubStr(e,f1,_pos-f1) . c1 . $l . t1 . c1,f1:=_pos+_extra
 	  } else {
 		 unexpected := "A closure was expected--->"""
 		 return 0
@@ -611,13 +625,13 @@ Exprt(e, Byref objs:="")
 ,	e:=StrReplace(e,A_Space)
 	e1:="",f:=1,f1:=1,len:=StrLen(e)
 	While,m:=GetNextObjRef(e,start,f,len)
-	objs.Push(m), e1.=SubStr(e,f1,start-f1) . c1 . "do" . objs.MaxIndex() . c1,f1:=f
+	objs.Push(m), e1.=SubStr(e,f1,start-f1) . c1 . $do . objs.MaxIndex() . c1,f1:=f
 	e:=e1 . SubStr(e,f1),e1:="",f:=1,f1:=1
 	While,f:=RegExMatch(e,$Regex3,m,f)
-	e1.=SubStr(e,f1,f-f1) . m1 . c1 . "dr" . m2 . c1,f+=StrLen(m),f1:=f
+	e1.=SubStr(e,f1,f-f1) . m1 . c1 . $dr . m2 . c1,f+=StrLen(m),f1:=f
 	e:=e1 . SubStr(e,f1),e1:="",f:=1,f1:=1
 	While,f:=RegExMatch(e,$Regex4,m,f)
-		m2+=0,m2:=StrReplace(m2,$Dot,$2E,,1),e1.=SubStr(e,f1,f-f1) . m1 . c1 . "n" . m2 . c1,f+=StrLen(m),f1:=f
+		m2+=0,m2:=StrReplace(m2,$Dot,$2E,,1),e1.=SubStr(e,f1,f-f1) . m1 . c1 . $n . m2 . c1,f+=StrLen(m),f1:=f
 	e:=e1 . SubStr(e,f1),e1:="" ; ,e:=RegExReplace(e,"S)(^|\(|[^" . c1 . "-])-" . c1 . "n","$1" . c1 . "n'2D")
 ,	e:=StrReplace(e,$C1N,$C1L) ;,	e:=RegExReplace(e,"\\\.(\d+)\.(\d+)",c1 . "l$1'2E$2" . c1)
 ,	e:=RegExReplace(e,$RegexVar,$RegexVarRpl)
@@ -661,20 +675,23 @@ Exprols(o1,o2)
 Exprpr(o)
 {
 	global Exprot
-	t:=InStr(Exprot,"`n" . o . " ")+StrLen(o)+2
-	Return,SubStr(Exprot,t,InStr(Exprot," ",0,t)-t)
+	static $LBreak:="`n"
+	t:=InStr(Exprot,$LBreak . o . A_Space)+StrLen(o)+2
+	Return,SubStr(Exprot,t,InStr(Exprot,A_Space,0,t)-t)
 }
 
 Expras(o)
 {
 	global Exprot
-	Return,SubStr(Exprot,InStr(Exprot," ",0,InStr(Exprot,"`n" . o . " ")+StrLen(o)+2)+1,1)
+	static $LBreak:="`n"
+	Return,SubStr(Exprot,InStr(Exprot,A_Space,0,InStr(Exprot,$LBreak . o . A_Space)+StrLen(o)+2)+1,1)
 }
 
 Exprac(o)
 {
 	global Exprot
-	Return,SubStr(Exprot,InStr(Exprot,"`n",0,InStr(Exprot,"`n" . o . " ")+1)-1,1)
+	static $LBreak:="`n"
+	Return,SubStr(Exprot,InStr(Exprot,$LBreak,0,InStr(Exprot,$LBreak . o . A_Space)+1)-1,1)
 }
 
 Exprmlb(ByRef s,p,ByRef o="",b="(",e=")")
