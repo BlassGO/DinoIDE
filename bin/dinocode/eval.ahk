@@ -36,46 +36,42 @@ Eval(str, Byref FD := "", Byref _Objects:="", Byref _escape:="", Byref _result:=
 	if str is number
 	return,(_action>=2)?str:[str]
 	; Evaluate parsed expression with ExprEval()
-	$Result:=ExprEval((_action=4||_action=-1)?str:ExprCompile(str,_Objects), FD, _Objects, _escape, _result, _evaluated, _action, _hasexpr)
+	$Result:=ExprEval((_action=4||_action=-1)?str:ExprCompile(str,_Objects),FD,_Objects,_escape,_result,_evaluated,_action,_hasexpr)
 	if $Result=
-		return
+	return
 	; When only the resolution of a single segment is expected
-	if (_action>=2) {
-		if (_action=2||_action=4) {
+	if (_action>=2){
+		if (_action=2||_action=4){
 			; Restore object references
-			if (SubStr($Result,1,1)=Deref)&&(_end:=InStr($Result,Deref,2)) {
-				switch SubStr($Result,2,1)
-				{
+			if (SubStr($Result,1,1)=Deref)&&(_end:=InStr($Result,Deref,2)){
+				switch SubStr($Result,2,1){
 					case $Hash:
-						return FD[FD_CURRENT][SubStr($Result,3,-2)]
+						return,FD[FD_CURRENT][SubStr($Result,3,-2)]
 					case $RE:
-						return _result[SubStr($Result,3,-2)]
-				}
-			}
-		}
-		return,$Result
-	} else {
-		$Result:=StrSplit($Result,c1)
-		; Restore object references
-		For _i, _v in $Result
-		{
-			if (SubStr(_v,1,1)=Deref)&&(_end:=InStr(_v,Deref,2)) {
-				switch SubStr(_v,2,1)
-				{
-					case $Hash:
-						$Result[_i]:=FD[FD_CURRENT][SubStr(_v,3,-2)]
-					case $RE:
-						$Result[_i]:=_result[SubStr(_v,3,-2)]
+						return,_result[SubStr($Result,3,-2)]
 				}
 			}
 		}
 		return,$Result
 	}
+	$Result:=StrSplit($Result,c1)
+	; Restore object references
+	For _i,_v in $Result{
+		if (SubStr(_v,1,1)=Deref)&&(_end:=InStr(_v,Deref,2)){
+			switch SubStr(_v,2,1){
+				case $Hash:
+					$Result[_i]:=FD[FD_CURRENT][SubStr(_v,3,-2)]
+				case $RE:
+					$Result[_i]:=_result[SubStr(_v,3,-2)]
+			}
+		}
+	}
+	return,$Result
 }
 
 ; Always work with a Local copy of the Objects, allowing recursion on these
 EvalLocal(str, Byref FD := "", _Objects:="", Byref _escape:="", Byref _result:="", ByRef _evaluated:="", _action:=0, Byref _hasexpr:=0) {
-	return Eval(str, FD, _Objects, _escape, _result, _evaluated, _action, _hasexpr)
+	return,Eval(str,FD,_Objects,_escape,_result,_evaluated,_action,_hasexpr)
 }
 
 /*
@@ -112,36 +108,32 @@ EvalLocal(str, Byref FD := "", _Objects:="", Byref _escape:="", Byref _result:="
 ; I made some optimizations for the convenience of DinoCode (BlassGO)
 ParseObjects(Byref v_String, Byref FD := "", o_Oper :=  "", Byref o_Value := "",Byref _escape:="", Byref _result:="", ByRef _evaluated:="",Byref _hasexpr:=0)
 {
-	Static Deref:=Chr(4),$BraL:=Chr(91),$BraR:=Chr(93),$ParentL:=Chr(40),$ParentR:=Chr(41)
+	Static Deref:=Chr(4),$BraL:=Chr(91),$BraR:=Chr(93),$ParentL:=Chr(40),$ParentR:=Chr(41),$Assign:=":=",$null:=""
 	l_Matches:=[], _pos:=1, len:=StrLen(v_String)
-	While,(_method:=GetNextMethod(v_String,_pos,len,isdot))!=""
+	While,(_method:=GetNextMethod(v_String,_pos,len,isdot))!=$null
 	(!isdot)?l_Matches.Push(_method)
-	v_Obj:=l_Matches[1], l_MatchesLen:=l_Matches.Length(),(SubStr(v_Obj,1,1)=Deref)?(inkey:=SubStr(v_Obj, 3, -2), (inkey<=_hasexpr)?_ArrayObject:=_result[inkey]:(_ArrayObject:=load_config(_result[inkey],,,FD_CURRENT,"resolve",,false),_hasexpr+=1)):_ArrayObject:=FD[FD_CURRENT][v_Obj]
-	For $i, $v in l_Matches
-	{
-		_start:=SubStr($v, 1, 1), _end:=SubStr($v, 0)
+	v_Obj:=l_Matches[1], l_MatchesLen:=l_Matches.Length(),(SubStr(v_Obj,1,1)=Deref)?(inkey:=SubStr(v_Obj,3,-2),(inkey<=_hasexpr)?_ArrayObject:=_result[inkey]:(_ArrayObject:=load_config(_result[inkey],,,FD_CURRENT,"resolve",,false),_hasexpr+=1)):_ArrayObject:=FD[FD_CURRENT][v_Obj]
+	For $i,$v in l_Matches{
+		_start:=SubStr($v,1,1),_end:=SubStr($v,0)
 		If (_start=$ParentL&&_end=$ParentR)
-			continue
-		_Key:=(_start=$BraL&&_end=$BraR)?Eval(SubStr($v, 2, -1), FD, ,_escape, _result, _evaluated):[$v],$n:=l_Matches[$i+1], _start:=SubStr($n, 1, 1), _end:=SubStr($n, 0)
-		If (_start=$ParentL&&_end=$ParentR)
-		{
-			_Key:=_Key[1], _Params:=Eval(SubStr($n, 2, -1), FD, ,_escape, _result, _evaluated)
+		continue
+		_Key:=(_start=$BraL&&_end=$BraR)?Eval(SubStr($v,2,-1),FD,,_escape,_result,_evaluated):[$v],$n:=l_Matches[$i+1],_start:=SubStr($n,1,1),_end:=SubStr($n,0)
+		If (_start=$ParentL&&_end=$ParentR){
+			_Key:=_Key.1,_Params:=Eval(SubStr($n,2,-1),FD,,_escape,_result,_evaluated)
 			Try _ArrayObject:=($i=1)?%_Key%(_Params*):_ArrayObject[_Key](_Params*)
-			Catch e
-			{
-				If (InStr(e.Message, "0x800A03EC"))
-				{
+			Catch e{
+				If InStr(e.Message,"0x800A03EC"){
 					; Workaround for strange bug in some Excel methods
-					For _i, _v in _Params
-						_Params[_i]:=" " . _v
+					For _i,_v in _Params
+					_Params[_i]:=" " . _v
 					_ArrayObject:=($i=1)?%_Key%(_Params*):_ArrayObject[_Key](_Params*)
 				}
 				Else
 				Throw e
 			}
-		} Else If ($i=l_MatchesLen&&o_Oper=":=")
+		}Else If ($i=l_MatchesLen&&o_Oper=$Assign)
 		try _ArrayObject:=_ArrayObject[_Key*]:=o_Value
-		Else If ($i>1)
+		Else If $i>1
 		_ArrayObject:=_ArrayObject[_Key*]
 	}
 	return,_ArrayObject
@@ -306,28 +298,28 @@ ExprInit()
 	global
 	Exprot:="`n|| 3 L 2`n&& 4 L 2`n\! 5 R 1`n= 6 L 2`n== 6 L 2`n<> 6 L 2`n~= 6 L 2`n!= 6 L 2`n> 7 L 2`n< 7 L 2`n>= 7 L 2`n<= 7 L 2`n\. 8 L 2`n& 9 L 2`n^ 9 L 2`n| 9 L 2`n<< 10 L 2`n>> 10 L 2`n+ 11 L 2`n- 11 L 2`n* 12 L 2`n/ 12 L 2`n// 12 L 2`n\- 13 R 1`n! 13 R 1`n~ 13 R 1`n\& 13 R 1`n\* 13 R 1`n** 14 R 2`n\++ 15 R 1`n\-- 15 R 1`n++ 15 L 1`n-- 15 L 1`n. 16 L 2`n`% 17 R 1`n",Exprol:=SubStr(RegExReplace(Exprot,"iS) \d+ [LR] \d+\n","`n"),2,-1)
 	Sort,Exprol,FExprols
+	Exprol:="S)" . StrReplace(RegExReplace(Exprol,"S)[\\\.\*\?\+\[\{\|\(\)\^\$]","\$0"),"`n","|")
 }
 
 ExprCompile(Byref e, Byref objs:="", format:=true)
 {
-	static c1:=Chr(1),$L:="L",$R:="R"
+	static c1:=Chr(1),$L:="L",$R:="R",$o:="o"
 	format?(objs:=[],e:=Exprt(e,objs))
 	Loop,Parse,e,%c1%
 	{
 		lf:=A_LoopField,tt:=SubStr(lf,1,1),to:=SubStr(lf,2)
 		If lf=,
 		{
-			While,s<>""
-			Exprp1(ou,Exprp2(s))
+		While,s<>""
+		Exprp1(ou,Exprp2(s))
 		}
 		Else If tt=o
 		{
-			While,SubStr(so:=Exprp3(s),1,1)="o"
-			{
-				ta:=Expras(to),tp:=Exprpr(to),sop:=Exprpr(SubStr(so,2))
-				If ((ta=$L&&tp>sop)||(ta=$R&&tp>=sop))
-				Break
-				Exprp1(ou,Exprp2(s))
+			While,SubStr(so:=Exprp3(s),1,1)=$o{
+			ta:=Expras(to),tp:=Exprpr(to),sop:=Exprpr(SubStr(so,2))
+			If ((ta=$L&&tp>sop)||(ta=$R&&tp>=sop))
+			Break
+			Exprp1(ou,Exprp2(s))
 			}
 			Exprp1(s,lf)
 		}
@@ -335,10 +327,10 @@ ExprCompile(Byref e, Byref objs:="", format:=true)
 	}
 	While,s<>""
 	{
-		t1:=Exprp2(s)
-		If t1 In (,)
-		Return
-		Exprp1(ou,t1)
+	t1:=Exprp2(s)
+	If t1 In (,)
+	Return
+	Exprp1(ou,t1)
 	}
 	Return,ou
 }
@@ -347,23 +339,23 @@ ExprEval(Byref e,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, _action:=
 	static c1:=Chr(1),Deref:=Chr(4),$v:="v",$HashL:=Chr(4) . Chr(35), $HashR:=Chr(35) . Chr(4)
 	Loop,Parse,e,%c1%
 	{
-		lf:=A_LoopField,tt:=SubStr(lf,1,1),t:=SubStr(lf,2),InStr(lf,Deref)?(lf:=solve_any_escape(lf,esc,re,eva,_hasexpr))
-		If tt In l,v
-		lf:=Exprp1(s,lf)
-		Else{
-			a:=Exprac(t),Exprp1(s,Exprap(t,s,a,lp,objs,esc,re,eva,stop,_action,_hasexpr))
-			If unexpected
-			return 0
-			if stop
-			break
-		}
+	lf:=A_LoopField,tt:=SubStr(lf,1,1),t:=SubStr(lf,2),InStr(lf,Deref)?(lf:=solve_any_escape(lf,esc,re,eva,_hasexpr))
+	If tt In l,v
+	lf:=Exprp1(s,lf)
+	Else{
+	a:=Exprac(t),Exprp1(s,Exprap(t,s,a,lp,objs,esc,re,eva,stop,_action,_hasexpr))
+	If unexpected
+	return,0
+	if stop
+	break
+	}
 	}
 	Loop,Parse,s,%c1%
 	{
-		lf:=A_LoopField
-		If (SubStr(lf,1,1)=$v)
-		t1:=SubStr(lf,2),r.=(isObject(lp[FD_CURRENT][t1])?$HashL . t1 . $HashR:lp[FD_CURRENT][t1]) . c1
-		Else r.=SubStr(lf,2) . c1
+	lf:=A_LoopField
+	If (SubStr(lf,1,1)=$v)
+	t1:=SubStr(lf,2),r.=(isObject(lp[FD_CURRENT][t1])?$HashL . t1 . $HashR:lp[FD_CURRENT][t1]) . c1
+	Else r.=SubStr(lf,2) . c1
 	}
 	Return,SubStr(r,1,-1)
 }
@@ -438,17 +430,17 @@ Exprap(o,ByRef s,ac,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, Byref 
 	r2:=SubStr(o,1,1)
 	If r2=r
 	{
-		r2:=SubStr(o,2)
-		If (r2<=_hasexpr)
-		Return,$l . (IsObject(re[r2])?$l . DerefEL . r2 . DerefER:re[r2])
-		Else
-		r1:=load_config(re[r2],,,FD_CURRENT,$resolve,,false), _hasexpr+=1
-	} Else If r2=o
+	r2:=SubStr(o,2)
+	If (r2<=_hasexpr)
+	Return,$l . (IsObject(re[r2])?$l . DerefEL . r2 . DerefER:re[r2])
+	Else
+	r1:=load_config(re[r2],,,FD_CURRENT,$resolve,,false), _hasexpr+=1
+	}Else If r2=o
 	r1:=ParseObjects(objs[SubStr(o,2)], lp,,,esc,re,eva,_hasexpr)
 	Else if r2=p
 	r1:=ExprEval(objs[SubStr(o,2)],lp,objs,esc,re,eva,_action,_hasexpr)
 	Else if r2=f
-	r3:=InStr(o,$SC), r2:=SubStr(o,2,r3-2),r1:=IsFunc(r2)?((skip_functions&&r2~=skip_functions)?"":%r2%(EvalLocal(objs[SubStr(o,r3+1)],lp,objs,esc,re,eva,-1,_hasexpr)*)):((unexpected:="Unrecognized function name: " . r2)?"":"")
+	r3:=InStr(o,$SC),r2:=SubStr(o,2,r3-2),r1:=IsFunc(r2)?((skip_functions&&r2~=skip_functions)?"":%r2%(EvalLocal(objs[SubStr(o,r3+1)],lp,objs,esc,re,eva,-1,_hasexpr)*)):((unexpected:="Unrecognized function name: " . r2)?"":"")
 	If o=++
 	Return,$l . lp[FD_CURRENT][a1]++
 	If o=--
@@ -517,11 +509,10 @@ Exprap(o,ByRef s,ac,Byref lp, Byref objs, Byref esc, Byref re, Byref eva, Byref 
 	Return,$l . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)&&(a2v ? lp[FD_CURRENT][a2]:a2))), stop:=!stop
 	If o=||
 	Return,$l . (stop:=((a1v ? lp[FD_CURRENT][a1]:a1)||(a2v ? lp[FD_CURRENT][a2]:a2)))
-	If IsObject(r1)
-	{
-		re.Push(r1)
-		Return,$l . DerefEL . re.MaxIndex() . DerefER
-	} Else
+	If IsObject(r1){
+	re.Push(r1)
+	Return,$l . DerefEL . re.MaxIndex() . DerefER
+	}Else
 	Return,$l . r1
 }
 /*
@@ -552,17 +543,15 @@ e:=e1 . SubStr(e,f1)
 */
 
 Exprpa(e, Byref objs) {
-	static c1:=Chr(1), $ParentL:=Chr(40), $Apos:=Chr(39), $Apos27:="'27"
+	static c1:=Chr(1),$ParentL:=Chr(40),$Apos:=Chr(39),$Apos27:="'27"
 	len:=StrLen(e), f2:=f1:=1
-	while,(f:=InStr(e,$ParentL,false,f1))&&(f1:=Enclosing(e,f,,,len))
-	{
-		m:=StrReplace(Exprpa(SubStr(e,f+1,f1-f-2),objs),c1 . c1,c1), m:=SubStr(m,2,-1),f3:=0
-		While,f3:=InStr(m,$Apos,False,f3+1)
-		{
-			If (t1:=SubStr(m,f3+1,2))<>27
-			m:=StrReplace(m,$Apos . t1,Chr("0x" . t1))
+	while,(f:=InStr(e,$ParentL,false,f1))&&(f1:=Enclosing(e,f,,,len)){
+		m:=StrReplace(Exprpa(SubStr(e,f+1,f1-f-2),objs),c1 . c1,c1),m:=SubStr(m,2,-1),f3:=0
+		While,f3:=InStr(m,$Apos,False,f3+1){
+		If (t1:=SubStr(m,f3+1,2))<>27
+		m:=StrReplace(m,$Apos . t1,Chr("0x" . t1))
 		}
-		objs.Push(ExprCompile(StrReplace(m,$Apos27,$Apos),,false)), (word:=WhileWordBack(e,f-1)) ? (e1.=SubStr(e,f2,word-f2) . c1 . "df" . SubStr(e, word, f-word) . ";" . objs.MaxIndex() . c1) : (e1.=SubStr(e,f2,f-f2) . c1 . "dp" . objs.MaxIndex() . c1), f2:=f1
+		objs.Push(ExprCompile(StrReplace(m,$Apos27,$Apos),,false)),(word:=WhileWordBack(e,f-1))?(e1.=SubStr(e,f2,word-f2) . c1 . "df" . SubStr(e,word,f-word) . ";" . objs.MaxIndex() . c1) : (e1.=SubStr(e,f2,f-f2) . c1 . "dp" . objs.MaxIndex() . c1),f2:=f1
 	}
 	return,e1 . SubStr(e,f2)
 }
@@ -599,22 +588,19 @@ Exprt(e, Byref objs:="")
 	, $BackAsteriRpl:="$1\*" . Chr(1)
 	, $BackCounter:="S)(^|[^" . Chr(1) . "\)])(\+\+|--)" . Chr(1) . "(?=[lvd])"
 	, $BackCounterRpl:="$1\$2" . Chr(1)
-	, $ExprolResult, $ExprolResultRpl:=Chr(1) . "o$0" . Chr(1)
+	, $ExprolRpl:=Chr(1) . "o$0" . Chr(1)
 	, $RegexFail:="S)" . Chr(1) . "[^lvod,\n]"
-	($ExprolResult="")?$ExprolResult:="S)" . StrReplace(RegExReplace(Exprol,"S)[\\\.\*\?\+\[\{\|\(\)\^\$]","\$0"),"`n","|")
-	f1:=1,_pos:=1, _extra:=0
-    while,_pos:=InStr(e,$Quote,false,_pos+_extra)
-    {
-	  if _end:=InStr(e,$Quote,false,_pos+1)
-	  {
-		t1:=Substr(e, _pos+1, (_end-_pos)-1), _extra:=StrLen(t1)+2
+	f1:=1,_pos:=1,_extra:=0
+    while,_pos:=InStr(e,$Quote,false,_pos+_extra){
+	  if _end:=InStr(e,$Quote,false,_pos+1){
+		t1:=Substr(e,_pos+1,(_end-_pos)-1),_extra:=StrLen(t1)+2
 		SetFormat,IntegerFast,Hex
 		While,RegExMatch(t1,$Regex1,c)
 		t1:=StrReplace(t1,c,$Apos . SubStr("0" . SubStr(Asc(c),3),-1))
 		SetFormat,IntegerFast,D
 		e1.=SubStr(e,f1,_pos-f1) . c1 . $l . t1 . c1,f1:=_pos+_extra
-	  } else {
-		 unexpected := "A closure was expected--->"""
+	  }else{
+		 unexpected:="A closure was expected--->"""
 		 return 0
 	  }
     }
@@ -631,7 +617,7 @@ Exprt(e, Byref objs:="")
 	e1.=SubStr(e,f1,f-f1) . m1 . c1 . $dr . m2 . c1,f+=StrLen(m),f1:=f
 	e:=e1 . SubStr(e,f1),e1:="",f:=1,f1:=1
 	While,f:=RegExMatch(e,$Regex4,m,f)
-		m2+=0,m2:=StrReplace(m2,$Dot,$2E,,1),e1.=SubStr(e,f1,f-f1) . m1 . c1 . $n . m2 . c1,f+=StrLen(m),f1:=f
+	m2+=0,m2:=StrReplace(m2,$Dot,$2E,,1),e1.=SubStr(e,f1,f-f1) . m1 . c1 . $n . m2 . c1,f+=StrLen(m),f1:=f
 	e:=e1 . SubStr(e,f1),e1:="" ; ,e:=RegExReplace(e,"S)(^|\(|[^" . c1 . "-])-" . c1 . "n","$1" . c1 . "n'2D")
 ,	e:=StrReplace(e,$C1N,$C1L) ;,	e:=RegExReplace(e,"\\\.(\d+)\.(\d+)",c1 . "l$1'2E$2" . c1)
 ,	e:=RegExReplace(e,$RegexVar,$RegexVarRpl)
@@ -651,17 +637,16 @@ Exprt(e, Byref objs:="")
 ,	e:=RegExReplace(e,$BackAmper,$BackAmperRpl)
 ,	e:=RegExReplace(e,$BackAsteri,$BackAsteriRpl)
 ,	e:=RegExReplace(e,$BackCounter,$BackCounterRpl)
-,	e:=RegExReplace(e,$ExprolResult,$ExprolResultRpl)
+,	e:=RegExReplace(e,Exprol,$ExprolRpl)
 ,	e:=StrReplace(e,$Comma,$CommaRpl)
 ,	e:=Exprpa(e,objs)
 	e:=StrReplace(e,c1_2,c1)
 	If RegExMatch(e,$RegexFail)
 	Return
 	e:=SubStr(e,2,-1),f:=0
-	While,f:=InStr(e,$Apos,False,f+1)
-	{
-		If (t1:=SubStr(e,f+1,2))<>27
-		e:=StrReplace(e,$Apos . t1,Chr("0x" . t1))
+	While,f:=InStr(e,$Apos,False,f+1){
+	If (t1:=SubStr(e,f+1,2))<>27
+	e:=StrReplace(e,$Apos . t1,Chr("0x" . t1))
 	}
 	e:=StrReplace(e,$Apos27,$Apos)
 	Return,e

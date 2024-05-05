@@ -24,7 +24,7 @@ SetWorkingDir, %A_ScriptDir%
 ;@Ahk2Exe-AddResource icon.ico, 208
 
 ; Working
-ide_version=v1.2.0-b
+ide_version=v1.3.0
 ini := current "\config.ini" 
 IniRead, icon, %ini%, COMPILER, icon, 0
 (!FileExist(icon)) ? icon:=current "\icon.ico"
@@ -61,7 +61,7 @@ Settings :=
 	"Gutter": {
 		; Width in pixels. Make this larger when using
 		; larger fonts. Set to 0 to disable the gutter.
-		"Width": 25,
+		"Width": 35,
 
 		"FGColor": 0x9FAFAF,
 		"BGColor": 0x262626
@@ -127,8 +127,9 @@ try {
 		Menu, Examples, Add, %A_LoopFileName%, % ":" item
 	}
 }
-Menu, Comments, Add, Block Comment, Comments
-Menu, Comments, Add, Block Uncomment, Comments
+Menu, Comments, Add, Block Comment (Selected text), Comments
+Menu, Comments, Add, Block Uncomment (Selected text), Comments
+Menu, Comments, Add, Remove ALL Comments (Selected text), Comments
 Menu, View, Add, Prediction, AutoComplete
 Menu, View, Add, Highlighter, Highlighter
 Menu, View, Add, Always On Top, ToggleOnTop
@@ -148,7 +149,7 @@ Gui, Menu, GuiMenu
 IDE:=new DinoIDE(Settings), RC:=IDE.RichCode
 
 ; Add extra Menus
-IDE.Add_Recent()
+RC.Add_Recent()
 Menu, GuiMenu, Add, &Edit, % ":" RC.MenuName
 Menu, GuiMenu, Add, &Build, :Build
 Menu, GuiMenu, Add, &Search, :Search
@@ -220,7 +221,7 @@ Open_Recent:
 	If FileExist(A_ThismenuItem) {
 		if !RC.FileClose()
 			return
-		RC.LoadFile(A_ThismenuItem)
+		RC.LoadFile(A_ThismenuItem), RC.PosFromFile(A_ThismenuItem)
 	}
 Return
 
@@ -241,7 +242,7 @@ Examples:
 	If FileExist(File:="Examples\" . A_ThisMenu . "\" . A_ThismenuItem) {
 		if !RC.FileClose()
 			return
-		RC.LoadFile(File)
+		RC.LoadFile(File), RC.PosFromFile(File)
 	}
 return
 
@@ -284,11 +285,12 @@ Compile:
 return
 
 Comments:
-	if InStr(A_ThismenuItem, "Un") {
-		RC.SelectedText := RegExReplace(RC.SelectedText, "Dims)#\*?(.+?)(?:\*#|$)", "$1")
-	} else {
+	if InStr(A_ThismenuItem, "Remove")
+		RC.SelectedText := RegExReplace(RegExReplace(RC.SelectedText, "`ams)^\s*(?:(?:#\*.+?\*#\s*$)|(?:#[^\r\n]*))"),"`am)^\s+$")
+	else if InStr(A_ThismenuItem, "Un")
+		RC.SelectedText := RegExReplace(RegExReplace(RC.SelectedText, "`ams)^\s*\K#\*(.+?)\*#\s*$", "$1"), "`ams)^\s*\K#([^\r\n]*)", "$1")
+	else
 		RC.SelectedText := (InStr(Trim(RC.SelectedText, "`r`n"), "`n")) ? "#*" RC.SelectedText "*#`n" : "#" RC.SelectedText
-	}
 return
 
 Find:
@@ -301,13 +303,13 @@ return
 
 ChangeLang:
 	IniRead, last_opened, %ini%, GENERAL, last_opened, 0
+	fileinfo:=RC.GetFilePathPos(last_opened)
 	Language:="DinoCode"
 	RC.Settings.Highlighter := Codes[Language].Highlighter
-	if FileExist(last_opened) {
-		RC.LoadFile(last_opened)
-	} else {
-		RC.LoadFile(Codes[Language].FileDefault)
-	}
+	if FileExist(fileinfo.1)
+	RC.LoadFile(fileinfo.1), RC.PosFromNumber(fileinfo.2)
+	else
+	RC.LoadFile(Codes[Language].FileDefault)
 return
 
 

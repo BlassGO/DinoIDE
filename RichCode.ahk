@@ -533,7 +533,7 @@ class RichCode
 			if this.Open_File && !this.FileClose()
 				return 0
 			This.Value := Text
-			this.Add_Recent(File)
+			this.Add_Recent(File), this.PosFromFile(File)
 		} Else If (Mode = "Insert") {
 			This.ReplaceSel(Text)
 		} Else If (Mode = "Append") {
@@ -587,6 +587,7 @@ class RichCode
 				IfMsgBox, Yes
 					result:=this.FileSave()
 			}
+			this.Add_Recent(this.Open_File)
 			if !refresh {
 				Gui, +LastFound
 				WinGetTitle, Title
@@ -599,34 +600,50 @@ class RichCode
 		return result
    }
 
-   Add_Recent(File:="") {
+   GetFilePathPos(Byref str,GetPos:=false) {
+		static c1:=Chr(1),FilePosList:={}
+		if GetPos
+		return,(_key:=Crypt.Hash.StrHash(str))?(FilePosList[_key]?FilePosList[_key]:1):1
+		_info:=StrSplit(str,c1), _info.2?FilePosList[Crypt.Hash.StrHash(_info.1)]:=_info.2
+		return,_info
+   }
+
+   PosFromFile(Byref str) {
+	 pos:=this.GetFilePathPos(str,true),this.Selection:=[pos,pos]
+   }
+
+   PosFromNumber(n) {
+	 this.Selection:=[n,n]
+   }
+
+   Add_Recent(File:="",GetPos:="") {
 		global ini
+		static c1:=Chr(1)
 		Menu, Opened, DeleteAll
-		if (ini="")
-			return
+		if ini=
+		return
 		if File {
-			IniWrite, %File%, %ini%, GENERAL, last_opened
+			new_list:=File . c1 . this.Selection[1]
+			IniWrite, %new_list%, %ini%, GENERAL, last_opened
 			Menu, Opened, Add, %File%, Open_Recent
 			Gui, +LastFound
 			WinGetTitle, Title
 			StringSplit, Title, Title, -, %A_Space%
 			WinSetTitle, %Title1% - %File%
-			this.Open_File:=new_list:=File
-			Arg_in(this.Open_File)
-			Arg_OrigFilename(basename(this.Open_File))
+			this.Open_File:=File,Arg_in(File),Arg_OrigFilename(basename(File))
 		}
 		IniRead, last_opened_list, %ini%, GENERAL, last_opened_list, 0
-		(last_opened_list=0) ? last_opened_list:=""
+		(last_opened_list=0)?last_opened_list:=""
 		Loop, Parse, last_opened_list, `;
 		{
-			if (A_Index<=6) {
-				if (A_LoopField!=File&&FileExist(A_LoopField)) {
+			if (A_Index<=6){
+				fileinfo:=this.GetFilePathPos(A_LoopField)
+				if (fileinfo.1!=File&&FileExist(fileinfo.1)){
 					new_list.=";" . A_LoopField
-					Menu, Opened, Add, %A_LoopField%, Open_Recent
+					Menu, Opened, Add, % fileinfo.1, Open_Recent
 				}
-			} else {
-				break
-			}
+			}else
+			break
 		}
 		IniWrite, %new_list%, %ini%, GENERAL, last_opened_list
 	}

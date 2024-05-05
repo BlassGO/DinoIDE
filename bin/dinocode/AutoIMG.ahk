@@ -116,6 +116,7 @@ FileExistFolder(folder) {
    return InStr(FileExist(folder), "D")
 }
 CreateZipFile(sZip) {
+   static file
    ; Idea by shajul http://www.autohotkey.com/forum/viewtopic.php?t=65401
 	; I just ensure the use of UTF-8-RAW to avoid UTF-8 BOM leading bytes corrupting the ZIP (BlassGO)
    FileDelete, % sZip
@@ -397,33 +398,46 @@ TrimLine(Byref content) {
     return SubStr(content,header+1, last?last-header-1:0)
 }
 WriteAfterLine(Byref content, Byref str, Byref str2:="", linebreak:="`n") {
+   static _R:="`r",_N:="`n",_RN:="`r`n"
    tlen:=StrLen(content), _LEN:=StrLen(str)
-   if (_POS:=InStr(content,str))
-   {
-      (_startline:=InStr(content,"`n",,_POS-tlen)) ? (_LEN+=(_POS-_startline)-1, _POS:=_startline+1) : (_POS:=1, _LEN:=0)
-      (_endline:=InStr(content, "`n",, _POS+_LEN)) ? (_LEN+=_endline-(_POS+_LEN)) : (_LEN+=tlen-_LEN)
-      return RTrim(SubStr(content,1,_POS+_LEN),"`r`n") . linebreak . str2 . linebreak . LTrim(SubStr(content,_POS+_LEN+1),"`r`n")
+   if _POS:=InStr(content,str){
+      (_startline:=InStr(content,_N,,_POS-tlen)) ? (_LEN+=(_POS-_startline)-1, _POS:=_startline+1) : (_POS:=1, _LEN:=0)
+      (_endline:=InStr(content,_N,, _POS+_LEN)) ? (_LEN+=_endline-(_POS+_LEN)-(SubStr(content,_endline-1,1)=_R)) : (_LEN+=tlen-_LEN)
+      return,RTrim(SubStr(content,1,_POS+_LEN),_RN) . linebreak . str2 . linebreak . LTrim(SubStr(content,_POS+_LEN+1),_RN)
    }
-   return content
+   return,content
 }
 WriteBeforeLine(Byref content, Byref str, Byref str2:="", linebreak:="`n") {
+   static _R:="`r",_N:="`n",_RN:="`r`n"
    tlen:=StrLen(content), _LEN:=StrLen(str)
-   if (_POS:=InStr(content,str))
-   {
-      (_startline:=InStr(content,"`n",,_POS-tlen)) ? (_LEN+=(_POS-_startline)-1, _POS:=_startline+1) : (_POS:=1, _LEN:=0)
-      (_endline:=InStr(content, "`n",, _POS+_LEN)) ? (_LEN+=_endline-(_POS+_LEN)) : (_LEN+=tlen-_LEN)
-      return RTrim(SubStr(content,1,_POS-1),"`r`n") . ((_POS-1>0)?linebreak:"") . str2 . linebreak . LTrim(SubStr(content,_POS),"`r`n")
+   if _POS:=InStr(content,str){
+      (_startline:=InStr(content,_N,,_POS-tlen)) ? (_LEN+=(_POS-_startline)-1, _POS:=_startline+1) : (_POS:=1, _LEN:=0)
+      (_endline:=InStr(content,_N,, _POS+_LEN)) ? (_LEN+=_endline-(_POS+_LEN)-(SubStr(content,_endline-1,1)=_R)) : (_LEN+=tlen-_LEN)
+      return,RTrim(SubStr(content,1,_POS-1),_RN) . ((_POS-1>0)?linebreak:"") . str2 . linebreak . LTrim(SubStr(content,_POS),_RN)
    }
-   return content
+   return,content
 }
 smali_kit(options*) {
+   static _R:="`r",_N:="`n",_RN:="`r`n"
    complete_extract:=true, result:=0, to_do:={}
    while options.MaxIndex() {
       if (SubStr(p:=options.RemoveAt(1),1,1)="-") {
          (SubStr(options[1],1,1)!="-") ? ((p2:=options.RemoveAt(1)) ? (SubStr(options[1],1,1)!="-") ? (p3:=options.RemoveAt(1)) : p3:="") : (p2:=p3:="")
          switch (p) {
-            case "-dir","-d","-file","-f":
-               dir:=p2
+            case "-dir","-d":
+               if FileExistFolder(p2)
+               dirpath:=p2
+               else{
+                  unexpected:="The directory does not exist ->" . p2
+                  return,0
+               }
+            case "-file","-f":
+               if FileExistFile(p2)
+               filepath:=p2
+               else{
+                  unexpected:="The file does not exist ->" . p2
+                  return,0
+               }
             case "-method","-m":
               method:=p2
             case "-print-path","-pp":
@@ -443,38 +457,64 @@ smali_kit(options*) {
             case "-before-line","-bl":
               to_do.Push({line:p2, add:p3, bl:true}), complete_extract:=false
             case "-name","-n":
-              opt.="name: " p2
-            case "-static-name","-sn":
-              opt.="static-name: " p2
+              name:=p2
             case "-check","-c":
               check:=true
          }
       }
    }
-   (dir&&method) ? info:=StrSplit(find_str(dir,method,".end method","complete_extract recursive all lines info " opt),"`n")
+   if method=
+   {
+      unexpected:="It is required a -method to start the search"
+      return,0
+   }else if (filepath!=""&&dirpath!=""){
+      unexpected:="The -dir and -file options cannot be used at the same time"
+      return,0
+   }else if (filepath!=""){
+      fileobj:=New File(filepath)
+      if _found:=fileobj.find(method,".end method","complete_extract recursive all lines info")
+      fileinfo:="PATH=" . fileobj.path . _N . _found
+   }else if (dirpath!=""){
+      fileobj:=New File()
+      Loop,Files,% dirpath . ((name="")?"\*":"\" . name),FR
+      {
+         if !fileobj.isReadable(,,,A_LoopFileLongPath)
+         continue
+         fileobj.path:=A_LoopFileLongPath
+         if _found:=fileobj.find(method,".end method","complete_extract recursive all lines info")
+         fileinfo.=((fileinfo="")?"":_N) . "PATH=" . A_LoopFileLongPath . _N . _found
+      }
+   }else{
+      unexpected:="It is required to specify a directory or file"
+      return,0
+   }
+   info:=StrSplit(fileinfo,"`n")
    Loop % info.MaxIndex()
    {
-      if InStr(info[A_Index], "PATH=") {
-         path:=SubStr(info[A_Index],StrLen("PATH=")+1), pos:=SubStr(info[A_Index+1],StrLen("POS=")+1), len:=SubStr(info[A_Index+2],StrLen("LEN=")+1)
+      path:=InStr(info[A_Index], "PATH=")?SubStr(info[A_Index],6):path
+      if path=
+      continue
+      if InStr(info[A_Index], "LEN=") {
+         pos:=SubStr(info[A_Index-1],StrLen("POS=")+1), len:=SubStr(info[A_Index],StrLen("LEN=")+1)
          content_tmp:=read_file(path)
          ((path=last_path)&&(addlen:=StrLen(content_tmp)-last_len)) ? (pos+=addlen, len+=addlen)
          check_method:=SubStr(content_tmp,pos,30)
          if (check_method~="^\.method ")&&!(check_method~="\.method abstract|\.method public abstract") {
             content:=print?"":(complete_extract?SubStr(content_tmp, pos, len):TrimLine(SubStr(content_tmp, pos, len)))
             if print {
-               (result) ? result.="`n"
-               result.=path
+               if (path!=last_path)
+               result.=(result=""?"":_N) . path
                continue
             }
+            contentbreak:=InStr(content,_RN)?_RN:_N
             for cont, props in to_do
             {
-               if props.r {
+               if props.r
                   content:=props.rpl
-               } else if (props.orig!="") {
+               else if (props.orig!="")
                   content:=StrReplace(content, props.orig, props.rpl)
-               } else if (props.line!="") {
-                  content:=(props.bl)?WriteBeforeLine(content,props.line,props.add):WriteAfterLine(content,props.line,props.add)
-               }
+               else if (props.line!="")
+                  content:=(props.bl)?WriteBeforeLine(content,props.line,props.add,contentbreak):WriteAfterLine(content,props.line,props.add,contentbreak)
             }
             content:=StrReplace(content_tmp,SubStr(content_tmp, pos, len),complete_extract?content:SubStr(content_tmp,pos,InStr(content_tmp,"`n",false,pos)-pos) . "`n" . content . "`n.end method")
             if (content=content_tmp) {
@@ -490,173 +530,6 @@ smali_kit(options*) {
       }
    }
    return result
-}
-find_str(path,str,str2:="",options:="") {
-   ; By @BlassGO
-   orig_len:=StrLen(str), orig_len2:=StrLen(str2), mode:="F", case_sense:=false
-   RegexMatch(options, "i)encoding:\s*(CP\d+|UTF-8|UTF-8-RAW|UTF-16|UTF-16-RAW)", opt) ? options:=StrReplace(options, opt)
-   enc:=opt1 ? opt1 : "UTF-8"
-   if RegexMatch(options, "i)name:\s*(.*)", opt)
-      options:=StrReplace(options, opt), name:=(opt1!="") ? opt1 : "", literal_name:=false
-   else if RegexMatch(options, "i)static-name:\s*(.*)", opt) 
-      options:=StrReplace(options, opt), name:=(opt1!="") ? opt1 : "", literal_name:=true
-   FileEncoding, % enc
-   if (options ~= "i)\bpattern\b")
-		pattern := true
-   if (options ~= "i)\ball\b")
-		all := true
-   if (options ~= "i)\binfo\b")
-		info := true
-   if (options ~= "i)\brecursive\b")
-		mode .= "R"
-   if (options ~= "i)\blines\b")
-		as_lines := true
-   if (options ~= "i)\bextract\b")
-		extract := true, header:=false
-   if (options ~= "i)\bcomplete_extract\b")
-		extract := true, header:=true
-   if (options ~= "i)\bcase_sense\b")
-      case_sense := true
-   (!pattern&&InStr(FileExist(path), "D")) ? (path .= SubStr(path,0)="\" ? "*.*" : "\*.*"):false
-   Loop, Files, %path%, %mode%
-   {  
-      if isBinFile(A_LoopFileLongPath)||((name!="")?(literal_name?(name=A_LoopFileName):(InStr(A_LoopFileName,name))):false)
-         continue
-      _last:=1
-      FileRead, content, % A_LoopFileLongPath
-      as_lines ? tlen:=StrLen(content)
-      while (_last>0) {
-         len:=orig_len, len2:=orig_len2
-         if (_at:=InStr(content,str,case_sense,_last)) {
-            if as_lines {
-               (_startline:=InStr(content,"`n",false,_at-tlen)) ? (len+=(_at-_startline)-1, _at:=_startline+1) : (_at:=1, len:=0)
-               (_endline:=InStr(content, "`n",false, _at+len)) ? (len+=_endline-(_at+len)-(SubStr(content,_endline-1,1)="`r")) : (len+=tlen-len)
-            }
-            if (str2!="") {
-               if (_at2:=InStr(content,str2,case_sense,_at+len)) {
-                  if as_lines {
-                     (_startline:=InStr(content,"`n",false,_at2-tlen)) ? (len2+=(_at2-_startline)-1, _at2:=_startline+1) : (_at2:=1, len2:=0)
-                     (_endline:=InStr(content, "`n",false, _at2+len2)) ? (len2+=_endline-(_at2+len2)-(SubStr(content,_endline-1,1)="`r")) : (len2+=tlen-len2)
-                  }
-                  (extract) ? _last:=_at2+len2 : _last:=0
-                  if info {
-                     if all
-                        result ? result.="`n" : false, result.= header ? ("PATH=" . A_LoopFileLongPath . "`nPOS=" . _at . "`nLEN=" . (_at2-_at)+len2) : ("PATH=" . A_LoopFileLongPath . "`nPOS=" . _at+len . "`nLEN=" . (_at2-_at)-len)
-                     else
-                        return header ? ("PATH=" . A_LoopFileLongPath . "`nPOS=" . _at . "`nLEN=" . (_at2-_at)+len2) : ("PATH=" . A_LoopFileLongPath . "`nPOS=" . _at+len . "`nLEN=" . (_at2-_at)-len)
-                  } else if all {
-                     result ? result.="`n" : false, result.=(extract) ? (header ? SubStr(content,_at,(_at2-_at)+len2) : SubStr(content,_at+len,(_at2-_at)-len)) : A_LoopFileLongPath
-                  } else {
-                     return (extract) ? (header ? SubStr(content,_at,(_at2-_at)+len2) : SubStr(content,_at+len,(_at2-_at)-len)) : A_LoopFileLongPath
-                  }
-               } else {
-                  _last:=0
-               }
-            } else {
-               if extract {
-                  (!as_lines) ? ((_endline:=InStr(content, "`n",, _at+len)) ? (len+=_endline-(_at+len)-(SubStr(content,_endline-1,1)="`r")) : (len+=(tlen?tlen:(tlen:=StrLen(content)))-len)) : false
-                  _last:=_at+len
-               } else {
-                  _last:=0
-               }
-               if info {
-                  if all
-                     result ? result.="`n" : false, result.="PATH=" . A_LoopFileLongPath . "`nPOS=" . _at . "`nLEN=" . len
-                  else
-                     return "PATH=" . A_LoopFileLongPath . "`nPOS=" . _at . "`nLEN=" . len
-               } else if all {
-                  result ? result.="`n" : false, result.=(extract) ? SubStr(content,_at,len) : A_LoopFileLongPath
-               } else {
-                  return (extract) ? SubStr(content,_at,len) : A_LoopFileLongPath
-               }
-            }
-         } else {
-            _last:=0
-         }
-      }
-   }
-   return result
-}
-isBinFile(Filename,NumBytes:=32,Minimum:=4,complexunicode:=1) {
-	file:=FileOpen(Filename,"r")
-	file.Position:=0 ;force position to 0 (zero)
-	nbytes:=file.RawRead(rawbytes,NumBytes) ;read bytes
-	file.Close() ;close file
-	
-	if (nbytes < Minimum) ;recommended 4 minimum for unicode detection
-		return 0 ;asume text file, if too short
-	
-	t:=0, i:=0, bytes:=[] ;Initialize vars
-	
-	loop % nbytes ;create c-style bytes array
-		bytes[(A_Index-1)]:=Numget(&rawbytes,(A_Index-1),"UChar")
-	
-	;determine BOM if possible/existant
-	if (bytes[0]=0xFE && bytes[1]=0xFF)
-		|| (bytes[0]=0xFF && bytes[1]=0xFE)
-		return 0 ;text Utf-16 BE/LE file
-	if (bytes[0]=0xEF && bytes[1]=0xBB && bytes[2]=0xBF)
-		return 0 ;text Utf-8 file
-	if (bytes[0]=0x00 && bytes[1]=0x00
-		&& bytes[2]=0xFE && bytes[3]=0xFF)
-		|| (bytes[0]=0xFF && bytes[1]=0xFE
-		&& bytes[2]=0x00 && bytes[3]=0x00)
-		return 0 ;text Utf-32 BE/LE file
-		
-	while(i<nbytes) {	
-		;// ASCII
-		if( bytes[i] == 0x09 || bytes[i] == 0x0A || bytes[i] == 0x0D
-			|| (0x20 <= bytes[i] && bytes[i] <= 0x7E) ) {
-			i += 1
-			continue
-		}
-		;// non-overlong 2-byte
-		if( (0xC2 <= bytes[i] && bytes[i] <= 0xDF)
-			&& (0x80 <= bytes[i+1] && bytes[i+1] <= 0xBF) ) {
-			i += 2
-			continue
-		}
-		;// excluding overlongs, straight 3-byte, excluding surrogates
-		if( ( bytes[i] == 0xE0 && (0xA0 <= bytes[i+1] && bytes[i+1] <= 0xBF)
-			&& (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF) )
-			|| ( ((0xE1 <= bytes[i] && bytes[i] <= 0xEC)
-			|| bytes[i] == 0xEE || bytes[i] == 0xEF)
-			&& (0x80 <= bytes[i+1] && bytes[i+1] <= 0xBF)
-			&& (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF) 	)
-			|| ( bytes[i] == 0xED && (0x80 <= bytes[i+1] && bytes[i+1] <= 0x9F)
-			&& (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF) ) ) {
-			i += 3
-			continue
-		}
-		;// planes 1-3, planes 4-15, plane 16
-		if( ( bytes[i] == 0xF0 && (0x90 <= bytes[i+1] && bytes[i+1] <= 0xBF)
-			&& (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF)
-			&& (0x80 <= bytes[i+3] && bytes[i+3] <= 0xBF) )
-			|| ( (0xF1 <= bytes[i] && bytes[i] <= 0xF3)
-			&& (0x80 <= bytes[i+1] && bytes[i+1] <= 0xBF)
-			&& (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF)
-			&& (0x80 <= bytes[i+3] && bytes[i+3] <= 0xBF) )
-			|| ( bytes[i] == 0xF4 && (0x80 <= bytes[i+1] && bytes[i+1] <= 0x8F)
-			&& (0x80 <= bytes[i+2] && bytes[i+2] <= 0xBF)
-			&& (0x80 <= bytes[i+3] && bytes[i+3] <= 0xBF) ) ) {
-			i += 4
-			continue
-		}
-		t:=1
-		break
-	}
-	
-	if (t=0) ;the while-loop has no fails, then confirmed utf-8
-		return 0
-	;else do nothing and check again with the classic method below
-	
-	loop, %nbytes% {
-		if (bytes[(A_Index-1)]<9) or (bytes[(A_Index-1)]>126)
-			or ((bytes[(A_Index-1)]<32) and (bytes[(A_Index-1)]>13))
-			return 1
-	}
-	
-	return 0
 }
 get_serial(str, wireless := false) {
    if wireless||!RegexMatch(str, "`am)^([a-zA-Z]*[0-9][a-zA-Z0-9]+?)(?=[ `t])", serial)
